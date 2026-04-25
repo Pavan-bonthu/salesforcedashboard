@@ -1,0 +1,862 @@
+// ═══════════════════════════════════════════════
+//  CASEOPS — COMMAND CENTER v2.0
+//  Local-only. All data in localStorage.
+// ═══════════════════════════════════════════════
+
+let allData = [];
+let currentData = [];
+let donutChart = null;
+let barChart = null;
+let pendingWithChart = null;
+let activeDrawerCase = null;
+
+// ─── STORAGE HELPERS ───────────────────────────
+const store = {
+  get: k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+  set: (k, v) => localStorage.setItem(k, JSON.stringify(v)),
+  // Per-case data keyed by case number
+  getCase: (caseNum, key) => {
+    const all = store.get('caseData') || {};
+    return (all[caseNum] || {})[key];
+  },
+  setCase: (caseNum, key, val) => {
+    const all = store.get('caseData') || {};
+    if (!all[caseNum]) all[caseNum] = {};
+    all[caseNum][key] = val;
+    store.set('caseData', all);
+  }
+};
+
+// ─── WATCHLIST HELPERS ─────────────────────────
+const watchlist = {
+  get: () => store.get('watchlist') || {},
+  // Returns { starred: bool, note: string, starredAt: ISO }
+  getCase: (caseNum) => (watchlist.get()[caseNum] || null),
+  isStarred: (caseNum) => !!(watchlist.get()[caseNum]?.starred),
+
+  star: (caseNum, note = '') => {
+    const wl = watchlist.get();
+    wl[caseNum] = { starred: true, note, starredAt: new Date().toISOString() };
+    store.set('watchlist', wl);
+  },
+  unstar: (caseNum) => {
+    const wl = watchlist.get();
+    delete wl[caseNum];
+    store.set('watchlist', wl);
+  },
+  updateNote: (caseNum, note) => {
+    const wl = watchlist.get();
+    if (wl[caseNum]) { wl[caseNum].note = note; store.set('watchlist', wl); }
+  },
+  // Returns all starred case numbers that still exist in allData
+  activeItems: () => {
+    const wl = watchlist.get();
+    const starred = Object.keys(wl).filter(k => wl[k]?.starred);
+    // sort by starredAt ascending (oldest star first)
+    return starred.sort((a, b) => new Date(wl[a].starredAt) - new Date(wl[b].starredAt));
+  }
+};
+
+// ─── BOOT ──────────────────────────────────────
+window.addEventListener('load', () => {
+  const msgs = ['INITIALIZING...', 'LOADING MODULES...', 'SYNCING LOCAL DATA...', 'READY'];
+  let i = 0;
+  const el = document.getElementById('bootStatus');
+  const tick = () => { el.textContent = msgs[Math.min(i++, msgs.length-1)]; };
+  tick();
+  const iv = setInterval(tick, 450);
+
+  setTimeout(() => {
+    clearInterval(iv);
+    el.textContent = 'READY';
+    const boot = document.getElementById('boot');
+    boot.style.opacity = '0';
+    setTimeout(() => {
+      boot.style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+      const saved = store.get('cases');
+      if (saved && saved.length) {
+        processData(saved);
+        showBriefing();
+      }
+    }, 600);
+  }, 1900);
+});
+
+// ─── CLOCK ─────────────────────────────────────
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  document.getElementById('dateDisplay').textContent =
+    now.toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ─── FILE UPLOAD ───────────────────────────────
+document.getElementById('upload').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+    const cleaned = extractTable(rows);
+    store.set('cases', cleaned);
+    processData(cleaned);
+    showBriefing();
+  };
+  reader.readAsArrayBuffer(file);
+});
+
+function extractTable(rows) {
+  let start = rows.findIndex(r => r?.join(' ').toLowerCase().includes('case number'));
+  if (start === -1) return [];
+  const headers = rows[start];
+  return rows.slice(start + 1).map(r => {
+    const obj = {};
+    headers.forEach((h, i) => obj[h] = r[i]);
+    return obj;
+  }).filter(r => r['Case Number']);
+}
+
+// ─── PROCESS DATA ──────────────────────────────
+function processData(data) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  data.forEach(d => {
+    d.account     = d['Account Name: Account Name'] || 'Unknown';
+    d.owner       = d['Case Owner: Full Name'] || 'Unknown';
+    d.pendingWith = d['Cases pending with'] || 'Unknown';
+    d.status      = d['Status'] || 'Pending';
+    d.inc         = d['Related Issue: Incident Number'] || '';
+
+    const raw = d['Date/Time Opened'];
+    let created = null;
+    if (typeof raw === 'number') created = new Date((raw - 25569) * 86400 * 1000);
+    else if (raw) created = new Date(raw);
+
+    const age = (created && !isNaN(created))
+      ? Math.max(0, Math.floor((today - created) / 86400000))
+      : null;
+    d.age = age;
+
+    if (age === null)    d.bucket = 'Unknown';
+    else if (age <= 10)  d.bucket = '1-10';
+    else if (age <= 20)  d.bucket = '10-20';
+    else if (age <= 30)  d.bucket = '20-30';
+    else                 d.bucket = '30+';
+  });
+
+  allData = data;
+  currentData = data;
+
+  renderKPI();
+  renderCharts();
+  renderFilters();
+  renderWatchlist();
+  renderTable(data);
+  renderAlertStrip();
+  updateBellBadge();
+}
+
+// ─── KPI ───────────────────────────────────────
+function renderKPI() {
+  const total   = allData.length;
+  const pending = allData.filter(d => d.status !== 'Closed').length;
+  const incYes  = allData.filter(d => d.inc).length;
+  const incNo   = total - incYes;
+
+  document.getElementById('kpi').innerHTML = `
+    <div class="kpi-card k-total">
+      <div class="kpi-label">TOTAL CASES</div>
+      <div class="kpi-value">${total}</div>
+      <div class="kpi-sub">all loaded</div>
+    </div>
+    <div class="kpi-card k-pending">
+      <div class="kpi-label">OPEN / PENDING</div>
+      <div class="kpi-value">${pending}</div>
+      <div class="kpi-sub">${Math.round(pending/total*100)||0}% of total</div>
+    </div>
+    <div class="kpi-card k-inc">
+      <div class="kpi-label">INC CREATED</div>
+      <div class="kpi-value">${incYes}</div>
+      <div class="kpi-sub">incidents logged</div>
+    </div>
+    <div class="kpi-card k-noinc">
+      <div class="kpi-label">NO INC</div>
+      <div class="kpi-value">${incNo}</div>
+      <div class="kpi-sub">no incident yet</div>
+    </div>
+  `;
+}
+
+// ─── CHARTS ────────────────────────────────────
+const CHART_COLORS = [
+  '#3b82f6','#06b6d4','#8b5cf6','#10b981',
+  '#f59e0b','#ef4444','#ec4899','#14b8a6','#a78bfa'
+];
+
+function renderCharts() {
+  // Donut
+  const acc = {};
+  allData.forEach(d => acc[d.account] = (acc[d.account] || 0) + 1);
+  const aL = Object.keys(acc), aV = Object.values(acc);
+
+  if (donutChart) donutChart.destroy();
+  donutChart = new Chart(document.getElementById('donut'), {
+    type: 'doughnut',
+    data: { labels: aL, datasets: [{ data: aV, backgroundColor: CHART_COLORS, borderWidth: 0 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      onClick: (e, el) => { if (el.length) quickFilter('accountFilter', aL[el[0].index]); }
+    }
+  });
+
+  // Bar (age buckets)
+  const bucketOrder = ['1-10', '10-20', '20-30', '30+', 'Unknown'];
+  const bkt = {};
+  allData.forEach(d => bkt[d.bucket] = (bkt[d.bucket] || 0) + 1);
+  const bL = bucketOrder.filter(b => bkt[b]);
+  const bV = bL.map(b => bkt[b]);
+  const barColors = bL.map(b => b === '30+' ? '#ef4444' : b === '20-30' ? '#f59e0b' : b === '10-20' ? '#3b82f6' : '#10b981');
+
+  if (barChart) barChart.destroy();
+  barChart = new Chart(document.getElementById('bar'), {
+    type: 'bar',
+    data: { labels: bL, datasets: [{ data: bV, backgroundColor: barColors, borderRadius: 4, borderSkipped: false }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b', font: { family: 'Space Mono', size: 10 } } },
+        y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b', font: { family: 'Space Mono', size: 10 } } }
+      },
+      onClick: (e, el) => { if (el.length) quickFilter('bucketFilter', bL[el[0].index]); }
+    }
+  });
+
+  // Pending With
+  const pw = {};
+  allData.filter(d => d.status !== 'Closed').forEach(d => {
+    pw[d.pendingWith] = (pw[d.pendingWith] || 0) + 1;
+  });
+  const pL = Object.keys(pw), pV = Object.values(pw);
+
+  if (pendingWithChart) pendingWithChart.destroy();
+  if (!pL.length) return;
+  pendingWithChart = new Chart(document.getElementById('pendingWithChart'), {
+    type: 'bar',
+    data: { labels: pL, datasets: [{ data: pV, backgroundColor: CHART_COLORS, borderRadius: 4, borderSkipped: false }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      indexAxis: 'y',
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b', font: { family: 'Space Mono', size: 10 } } },
+        y: { grid: { display: false }, ticks: { color: '#64748b', font: { family: 'Space Mono', size: 10 } } }
+      },
+      onClick: (e, el) => { if (el.length) quickFilter('pendingFilter', pL[el[0].index]); }
+    }
+  });
+}
+
+// ─── PROMISE HELPERS ───────────────────────────
+function getPromises(caseNum) { return store.getCase(caseNum, 'promises') || []; }
+function getEmails(caseNum)   { return store.getCase(caseNum, 'emails')   || []; }
+
+function getCasePromiseStatus(caseNum) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const promises = getPromises(caseNum).filter(p => !p.done);
+  if (!promises.length) return null;
+  for (const p of promises) {
+    const d = new Date(p.date); d.setHours(0,0,0,0);
+    const diff = Math.floor((d - today) / 86400000);
+    if (diff < 0)  return 'overdue';
+    if (diff === 0) return 'today';
+  }
+  return 'upcoming';
+}
+
+// ─── ALERT STRIP ───────────────────────────────
+function renderAlertStrip() {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const alerts = [];
+
+  allData.forEach(d => {
+    const ps = getCasePromiseStatus(d['Case Number']);
+    if (ps === 'overdue' || ps === 'today') {
+      const promises = getPromises(d['Case Number']).filter(p => !p.done);
+      promises.forEach(p => {
+        const pd = new Date(p.date); pd.setHours(0,0,0,0);
+        const diff = Math.floor((pd - today) / 86400000);
+        if (diff <= 0) alerts.push({ caseNum: d['Case Number'], account: d.account, text: p.text, diff, type: diff < 0 ? 'overdue' : 'today' });
+      });
+    }
+  });
+
+  const strip = document.getElementById('alertStrip');
+  if (!alerts.length) { strip.innerHTML = ''; return; }
+
+  strip.innerHTML = alerts.map(a => `
+    <div class="strip-item ${a.type}" onclick="openDrawer('${a.caseNum}')">
+      <span class="strip-icon">${a.type === 'overdue' ? '🔴' : '🟡'}</span>
+      <span class="strip-text"><strong>${a.caseNum}</strong> — ${a.text}</span>
+      <span class="strip-case">${a.type === 'overdue' ? Math.abs(a.diff)+' DAYS OVERDUE' : 'DUE TODAY'}</span>
+    </div>
+  `).join('');
+
+  // Also populate side panel
+  const alertList = document.getElementById('alertList');
+  alertList.innerHTML = alerts.map(a => `
+    <div class="alert-item ${a.type}" onclick="openDrawer('${a.caseNum}')">
+      <div class="alert-item-case">${a.caseNum} · ${a.account}</div>
+      <div class="alert-item-text">${a.text}</div>
+      <div class="alert-item-due">${a.type === 'overdue' ? '⚠ ' + Math.abs(a.diff) + ' days overdue' : '⏰ Due today'}</div>
+    </div>
+  `).join('');
+}
+
+function updateBellBadge() {
+  const today = new Date(); today.setHours(0,0,0,0);
+  let count = 0;
+  allData.forEach(d => {
+    const ps = getCasePromiseStatus(d['Case Number']);
+    if (ps === 'overdue' || ps === 'today') count++;
+  });
+  document.getElementById('bellBadge').textContent = count;
+  document.getElementById('bellBadge').style.background = count ? '#ef4444' : '#334155';
+}
+
+// ─── ALERT PANEL ───────────────────────────────
+function toggleAlertPanel() {
+  document.getElementById('alertPanel').classList.toggle('open');
+}
+
+// ─── DAILY BRIEFING ────────────────────────────
+function showBriefing() {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const todayKey = today.toDateString();
+  if (store.get('lastBriefing') === todayKey) return; // show once per day
+
+  const total   = allData.length;
+  const pending = allData.filter(d => d.status !== 'Closed').length;
+  const critical = allData.filter(d => d.age > 30).length;
+
+  const promises = [];
+  allData.forEach(d => {
+    getPromises(d['Case Number']).filter(p => !p.done).forEach(p => {
+      const pd = new Date(p.date); pd.setHours(0,0,0,0);
+      const diff = Math.floor((pd - today) / 86400000);
+      promises.push({ caseNum: d['Case Number'], text: p.text, diff, account: d.account });
+    });
+  });
+
+  const overdue  = promises.filter(p => p.diff < 0);
+  const dueToday = promises.filter(p => p.diff === 0);
+  const upcoming = promises.filter(p => p.diff > 0 && p.diff <= 3);
+
+  // Cases with no email in last 3 days (flag if has email entries)
+  const noEmailCases = allData.filter(d => {
+    const emails = getEmails(d['Case Number']);
+    if (!emails.length && d.status !== 'Closed') return true;
+    return false;
+  }).slice(0, 5);
+
+  let html = `
+    <div class="briefing-stats-row">
+      <div class="b-stat-card"><div class="b-stat-val">${total}</div><div class="b-stat-label">Total Cases</div></div>
+      <div class="b-stat-card"><div class="b-stat-val" style="color:var(--warning)">${pending}</div><div class="b-stat-label">Still Open</div></div>
+      <div class="b-stat-card"><div class="b-stat-val" style="color:var(--danger)">${critical}</div><div class="b-stat-label">Age &gt; 30 days</div></div>
+    </div>
+  `;
+
+  const starredItems = watchlist.activeItems();
+  const starredRows  = starredItems
+    .map(cn => allData.find(d => String(d['Case Number']) === String(cn)))
+    .filter(Boolean);
+
+  if (starredRows.length) {
+    html += `<div class="briefing-section"><div class="briefing-label">⭐ YOUR WATCHLIST TODAY (${starredRows.length})</div>`;
+    starredRows.forEach(d => {
+      const wlData = watchlist.getCase(d['Case Number']);
+      const note = wlData?.note ? ` — <em style="color:var(--text-dim)">${wlData.note}</em>` : '';
+      html += `<div class="briefing-item"><span class="briefing-dot b-blue"></span><span class="briefing-item-text"><strong>${d['Case Number']}</strong> (${d.account})${note}</span></div>`;
+    });
+    html += `</div>`;
+  }
+
+  if (overdue.length) {
+    html += `<div class="briefing-section"><div class="briefing-label">⚠ OVERDUE PROMISES</div>`;
+    overdue.forEach(p => {
+      html += `<div class="briefing-item"><span class="briefing-dot b-red"></span><span class="briefing-item-text"><strong>${p.caseNum}</strong> (${p.account}) — ${p.text} <em style="color:var(--danger)">[${Math.abs(p.diff)} days late]</em></span></div>`;
+    });
+    html += `</div>`;
+  }
+
+  if (dueToday.length) {
+    html += `<div class="briefing-section"><div class="briefing-label">📅 DUE TODAY</div>`;
+    dueToday.forEach(p => {
+      html += `<div class="briefing-item"><span class="briefing-dot b-yellow"></span><span class="briefing-item-text"><strong>${p.caseNum}</strong> — ${p.text}</span></div>`;
+    });
+    html += `</div>`;
+  }
+
+  if (upcoming.length) {
+    html += `<div class="briefing-section"><div class="briefing-label">🔜 UPCOMING (NEXT 3 DAYS)</div>`;
+    upcoming.forEach(p => {
+      html += `<div class="briefing-item"><span class="briefing-dot b-blue"></span><span class="briefing-item-text"><strong>${p.caseNum}</strong> — ${p.text} <em style="color:var(--text-dim)">in ${p.diff} day(s)</em></span></div>`;
+    });
+    html += `</div>`;
+  }
+
+  if (noEmailCases.length) {
+    html += `<div class="briefing-section"><div class="briefing-label">📭 NO EMAIL LOGGED YET</div>`;
+    noEmailCases.forEach(d => {
+      html += `<div class="briefing-item"><span class="briefing-dot b-green"></span><span class="briefing-item-text"><strong>${d['Case Number']}</strong> (${d.account}) — no client email tracked</span></div>`;
+    });
+    html += `</div>`;
+  }
+
+  if (!overdue.length && !dueToday.length) {
+    html += `<div class="briefing-item"><span class="briefing-dot b-green"></span><span class="briefing-item-text">All clear! No overdue promises today.</span></div>`;
+  }
+
+  document.getElementById('briefingContent').innerHTML = html;
+  document.getElementById('briefingModal').classList.remove('hidden');
+}
+
+function closeBriefing() {
+  document.getElementById('briefingModal').classList.add('hidden');
+  store.set('lastBriefing', new Date().setHours(0,0,0,0).toString());
+}
+
+// ─── FILTERS ───────────────────────────────────
+function renderFilters() {
+  createDropdown('accountFilter', 'account');
+  createDropdown('ownerFilter',   'owner');
+  createDropdown('statusFilter',  'status');
+  createDropdown('pendingFilter', 'pendingWith');
+  createDropdown('bucketFilter',  'bucket');
+}
+
+function createDropdown(id, key) {
+  const vals = [...new Set(allData.map(d => d[key]).filter(Boolean))].sort();
+  const sel = document.getElementById(id);
+  sel.innerHTML = `<option value="">All</option>` + vals.map(v => `<option value="${v}">${v}</option>`).join('');
+  sel.onchange = applyFilters;
+}
+
+function quickFilter(filterId, value) {
+  document.getElementById(filterId).value = value;
+  applyFilters();
+}
+
+function applyFilters() {
+  const f = {
+    account:     document.getElementById('accountFilter').value,
+    owner:       document.getElementById('ownerFilter').value,
+    status:      document.getElementById('statusFilter').value,
+    pendingWith: document.getElementById('pendingFilter').value,
+    bucket:      document.getElementById('bucketFilter').value
+  };
+  const promiseF = document.getElementById('promiseFilter').value;
+
+  let filtered = allData;
+  Object.keys(f).forEach(k => { if (f[k]) filtered = filtered.filter(d => d[k] === f[k]); });
+
+  if (promiseF) {
+    filtered = filtered.filter(d => {
+      const ps = getCasePromiseStatus(d['Case Number']);
+      if (promiseF === 'overdue')  return ps === 'overdue';
+      if (promiseF === 'today')    return ps === 'today';
+      if (promiseF === 'pending')  return !!ps;
+      if (promiseF === 'none')     return !ps;
+      return true;
+    });
+  }
+
+  currentData = filtered;
+  renderTable(filtered);
+  renderWatchlist();
+}
+
+function resetFilters() {
+  ['accountFilter','ownerFilter','statusFilter','pendingFilter','bucketFilter','promiseFilter']
+    .forEach(id => document.getElementById(id).value = '');
+  currentData = allData;
+  renderTable(allData);
+  renderWatchlist();
+}
+
+// ─── WATCHLIST ─────────────────────────────────
+function renderWatchlist() {
+  const el = document.getElementById('watchlistSection');
+  if (!el) return;
+
+  const starred = watchlist.activeItems();
+  // Match starred case nums to live allData rows
+  const rows = starred
+  .map(cn => currentData.find(d => String(d['Case Number']) === String(cn)))
+  .filter(Boolean);
+  const kpiEl = document.getElementById('kpiWatchCount');
+  if (kpiEl) kpiEl.textContent = rows.length;
+
+  if (!rows.length) {
+    el.innerHTML = `
+      <div class="watchlist-empty">
+        <span class="wl-empty-icon">☆</span>
+        <span>No cases starred. Hit ★ on any row to watch it for tomorrow.</span>
+      </div>`;
+    return;
+  }
+
+  const today = new Date(); today.setHours(0,0,0,0);
+
+  el.innerHTML = rows.map(row => {
+    const caseNum = row['Case Number'];
+    const wlData  = watchlist.getCase(caseNum);
+    const note    = wlData?.note || '';
+    const ps      = getCasePromiseStatus(caseNum);
+    const emails  = getEmails(caseNum);
+    const age     = row.age;
+    const ageClass = age > 30 ? 'age-high' : age > 20 ? 'age-med' : 'age-low';
+
+    // Promise badge
+    let promiseBadge = '';
+    if (ps === 'overdue') promiseBadge = `<span class="wl-badge wl-badge-red">PROMISE OVERDUE</span>`;
+    else if (ps === 'today') promiseBadge = `<span class="wl-badge wl-badge-yellow">PROMISE DUE TODAY</span>`;
+
+    // Last email
+    const lastEmail = emails[emails.length - 1];
+    const emailLine = lastEmail
+      ? `<span class="wl-email">${lastEmail.direction === 'received' ? '📥' : '📤'} ${lastEmail.subject}</span>`
+      : `<span class="wl-email wl-email-none">no email logged</span>`;
+
+    // Starred-at label
+    const starredDate = wlData?.starredAt
+      ? new Date(wlData.starredAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+      : '';
+
+    return `
+      <div class="wl-card" id="wlcard-${caseNum}">
+        <div class="wl-card-top">
+          <div class="wl-card-left">
+            <span class="wl-case-num">${caseNum}</span>
+            <span class="wl-account">${row.account}</span>
+            ${promiseBadge}
+          </div>
+          <div class="wl-card-right">
+            <span class="wl-age ${ageClass}">${age !== null ? age+'d' : '—'}</span>
+            <span class="wl-pending">${row.pendingWith}</span>
+            <span class="wl-starred-date">starred ${starredDate}</span>
+          </div>
+        </div>
+        <div class="wl-subject">${row['Subject'] || ''}</div>
+        <div class="wl-card-bottom">
+          ${emailLine}
+          <div class="wl-note-row">
+            <input
+              class="wl-note-input"
+              type="text"
+              value="${note.replace(/"/g, '&quot;')}"
+              placeholder="Follow-up note…"
+              onchange="watchlist.updateNote('${caseNum}', this.value)"
+            />
+            <button class="wl-open-btn" onclick="openDrawer('${caseNum}')">OPEN ›</button>
+            <button class="wl-done-btn" onclick="unstarCase('${caseNum}')" title="Mark done & remove from watchlist">✓ DONE</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function toggleStar(caseNum, btn) {
+  if (watchlist.isStarred(caseNum)) {
+    watchlist.unstar(caseNum);
+    btn.classList.remove('starred');
+    btn.title = 'Watch this case';
+  } else {
+    watchlist.star(caseNum);
+    btn.classList.add('starred');
+    btn.title = 'Remove from watchlist';
+  }
+  renderWatchlist();
+}
+
+function unstarCase(caseNum) {
+  watchlist.unstar(caseNum);
+  // flash the card out
+  const card = document.getElementById(`wlcard-${caseNum}`);
+  if (card) {
+    card.style.transition = 'opacity 0.3s, transform 0.3s';
+    card.style.opacity = '0';
+    card.style.transform = 'translateX(20px)';
+    setTimeout(() => renderWatchlist(), 320);
+  } else {
+    renderWatchlist();
+  }
+  // Update the star button in the main table if visible
+  const starBtn = document.getElementById(`star-${caseNum}`);
+  if (starBtn) starBtn.classList.remove('starred');
+}
+
+// ─── TABLE ─────────────────────────────────────
+function renderTable(data) {
+  const starredInView = data.filter(r => watchlist.isStarred(r['Case Number'])).length;
+  const countEl = document.getElementById('tableCount');
+  countEl.textContent = starredInView
+    ? `${data.length} CASES · ${starredInView} ★ PINNED`
+    : `${data.length} CASES`;
+
+  const today = new Date(); today.setHours(0,0,0,0);
+  const tbody = document.getElementById('tableBody');
+
+  // ── Sort: starred first (oldest star at top), then rest
+  const starred   = data
+    .filter(r => watchlist.isStarred(r['Case Number']))
+    .sort((a, b) => {
+      const wa = watchlist.getCase(a['Case Number'])?.starredAt || '';
+      const wb = watchlist.getCase(b['Case Number'])?.starredAt || '';
+      return new Date(wa) - new Date(wb);
+    });
+  const unstarred = data.filter(r => !watchlist.isStarred(r['Case Number']));
+
+  const buildRow = (row, addDivider) => {
+    const caseNum  = row['Case Number'];
+    const status   = row.status || '';
+    const age      = row.age;
+    const emails   = getEmails(caseNum);
+    const ps       = getCasePromiseStatus(caseNum);
+    const promises = getPromises(caseNum).filter(p => !p.done);
+    const isStarred = watchlist.isStarred(caseNum);
+
+    const sLower = status.toLowerCase();
+    const pillClass = sLower.includes('closed') ? 'pill-closed' : sLower.includes('progress') ? 'pill-open' : 'pill-pending';
+    const statusPill = `<span class="status-pill ${pillClass}">${status}</span>`;
+
+    const ageClass   = age > 30 ? 'age-high' : age > 20 ? 'age-med' : 'age-low';
+    const ageDisplay = age !== null ? `<span class="age-num ${ageClass}">${age}d</span>` : '—';
+
+    const lastEmail = emails[emails.length - 1];
+    const emailCell = lastEmail
+      ? `<span class="email-indicator"><span class="email-dot has-email"></span>${lastEmail.direction === 'received' ? '📥' : '📤'} ${emails.length}</span>`
+      : `<span class="email-indicator"><span class="email-dot no-email"></span><span style="color:var(--text-muted)">none</span></span>`;
+
+    let promiseCell = `<span class="promise-indicator promise-none">—</span>`;
+    if (ps === 'overdue') {
+      const p = promises[0];
+      const d = new Date(p.date); d.setHours(0,0,0,0);
+      const diff = Math.abs(Math.floor((d - today) / 86400000));
+      promiseCell = `<span class="promise-indicator promise-overdue">🔴 ${diff}d overdue</span>`;
+    } else if (ps === 'today') {
+      promiseCell = `<span class="promise-indicator promise-today">🟡 due today</span>`;
+    } else if (ps === 'upcoming') {
+      const p = promises[0];
+      const d = new Date(p.date); d.setHours(0,0,0,0);
+      const diff = Math.ceil((d - today) / 86400000);
+      promiseCell = `<span class="promise-indicator promise-ok">🟢 in ${diff}d</span>`;
+    }
+
+    let rowClass = isStarred ? 'row-starred' : '';
+    if (ps === 'overdue') rowClass += ' has-alert';
+    else if (ps === 'today') rowClass += ' has-today';
+
+    const starClass = isStarred ? 'star-btn starred' : 'star-btn';
+    const starTitle = isStarred ? 'Unstar — remove from top' : 'Star — pin to top';
+
+    const divider = addDivider
+      ? `<tr class="table-divider"><td colspan="12"><span>── WATCHLIST ──────────────────── REST OF CASES ──</span></td></tr>`
+      : '';
+
+    return divider + `
+      <tr class="${rowClass.trim()}">
+        <td><button id="star-${caseNum}" class="${starClass}" onclick="toggleStar('${caseNum}', this)" title="${starTitle}">★</button></td>
+        <td>${statusPill}</td>
+        <td><span class="case-num">${caseNum}</span></td>
+        <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${row.account}</td>
+        <td style="white-space:nowrap">${row.owner}</td>
+        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${row['Subject']||''}</td>
+        <td>${ageDisplay}</td>
+        <td>${row.pendingWith}</td>
+        <td>${row.inc ? `<span class="inc-badge">${row.inc}</span>` : '<span style="color:var(--text-muted)">—</span>'}</td>
+        <td>${emailCell}</td>
+        <td>${promiseCell}</td>
+        <td><button class="open-btn" onclick="openDrawer('${caseNum}')">OPEN ›</button></td>
+      </tr>
+    `;
+  };
+
+  const starredHTML   = starred.map(r => buildRow(r, false)).join('');
+  const unstarredHTML = unstarred.map((r, i) => buildRow(r, i === 0 && starred.length > 0)).join('');
+  tbody.innerHTML = starredHTML + unstarredHTML;
+}
+
+// ─── DRAWER ────────────────────────────────────
+function openDrawer(caseNum) {
+  const caseData = allData.find(d => d['Case Number'] == caseNum);
+  if (!caseData) return;
+  activeDrawerCase = caseNum;
+
+  document.getElementById('drawerCaseNum').textContent = caseNum;
+  document.getElementById('drawerAccount').textContent = caseData.account;
+
+  const age = caseData.age;
+  const status = caseData.status || '';
+  const sClass = status.toLowerCase().includes('closed') ? 'status-closed' : status.toLowerCase().includes('progress') ? 'status-open' : 'status-pending';
+  document.getElementById('drawerMeta').innerHTML = `
+    <span class="meta-tag ${sClass}">${status}</span>
+    <span class="meta-tag age-tag">${age !== null ? age + ' DAYS OLD' : 'AGE UNKNOWN'}</span>
+    <span class="meta-tag age-tag">${caseData.pendingWith}</span>
+    ${caseData.inc ? `<span class="meta-tag" style="border-color:var(--accent3);color:var(--accent3)">${caseData.inc}</span>` : ''}
+  `;
+
+  // Load notes
+  document.getElementById('caseNotes').value = store.getCase(caseNum, 'notes') || '';
+
+  renderEmailLog(caseNum);
+  renderPromiseLog(caseNum);
+
+  document.getElementById('drawerOverlay').classList.add('open');
+  document.getElementById('drawer').classList.add('open');
+}
+
+function closeDrawer() {
+  document.getElementById('drawerOverlay').classList.remove('open');
+  document.getElementById('drawer').classList.remove('open');
+  activeDrawerCase = null;
+}
+
+// ─── EMAIL LOG ─────────────────────────────────
+function renderEmailLog(caseNum) {
+  const emails = getEmails(caseNum);
+  const log = document.getElementById('emailLog');
+  if (!emails.length) {
+    log.innerHTML = `<div style="color:var(--text-dim);font-size:12px;padding:8px 0">No emails logged yet. Add the first one below.</div>`;
+    return;
+  }
+  log.innerHTML = emails.map((e, i) => `
+    <div class="email-entry ${e.direction}">
+      <span class="email-dir-icon">${e.direction === 'received' ? '📥' : '📤'}</span>
+      <div class="email-entry-body">
+        <div class="email-subject">${e.subject}</div>
+        <div class="email-time">${e.direction.toUpperCase()} · ${e.timestamp}</div>
+      </div>
+      <button class="email-delete" onclick="deleteEmail('${caseNum}', ${i})">✕</button>
+    </div>
+  `).join('');
+}
+
+function addEmail() {
+  const subject = document.getElementById('emailSubject').value.trim();
+  const direction = document.getElementById('emailDir').value;
+  if (!subject || !activeDrawerCase) return;
+
+  const emails = getEmails(activeDrawerCase);
+  emails.push({
+    subject,
+    direction,
+    timestamp: new Date().toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+  });
+  store.setCase(activeDrawerCase, 'emails', emails);
+  document.getElementById('emailSubject').value = '';
+  renderEmailLog(activeDrawerCase);
+  renderTable(currentData); // refresh email indicator in table
+}
+
+function deleteEmail(caseNum, index) {
+  const emails = getEmails(caseNum);
+  emails.splice(index, 1);
+  store.setCase(caseNum, 'emails', emails);
+  renderEmailLog(caseNum);
+  renderTable(currentData);
+}
+
+// ─── PROMISE LOG ───────────────────────────────
+function renderPromiseLog(caseNum) {
+  const promises = getPromises(caseNum);
+  const log = document.getElementById('promiseLog');
+  const today = new Date(); today.setHours(0,0,0,0);
+
+  if (!promises.length) {
+    log.innerHTML = `<div style="color:var(--text-dim);font-size:12px;padding:8px 0">No promises tracked. Add commitments below to get alerts.</div>`;
+    return;
+  }
+
+  log.innerHTML = promises.map((p, i) => {
+    const pd = new Date(p.date); pd.setHours(0,0,0,0);
+    const diff = Math.floor((pd - today) / 86400000);
+    let cls = 'upcoming', dueLabel = '';
+    if (p.done) { cls = 'done'; dueLabel = 'DONE'; }
+    else if (diff < 0) { cls = 'overdue'; dueLabel = `${Math.abs(diff)}D OVERDUE`; }
+    else if (diff === 0) { cls = 'due-today'; dueLabel = 'DUE TODAY'; }
+    else dueLabel = `in ${diff}d`;
+
+    const dueColor = p.done ? 'var(--text-dim)' : diff < 0 ? 'var(--danger)' : diff === 0 ? 'var(--warning)' : 'var(--success)';
+
+    return `
+      <div class="promise-entry ${cls}">
+        <div class="promise-body">
+          <div class="promise-text-main">${p.text}</div>
+          <div class="promise-meta">
+            <span class="promise-due" style="color:${dueColor};font-family:var(--mono)">${dueLabel}</span>
+            <span class="promise-by">BY: ${p.owner}</span>
+            <span class="promise-by">${p.date}</span>
+          </div>
+        </div>
+        <div class="promise-actions">
+          ${!p.done ? `<button class="promise-done-btn" onclick="markPromiseDone('${caseNum}', ${i})">✓ DONE</button>` : ''}
+          <button class="email-delete" onclick="deletePromise('${caseNum}', ${i})">✕</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function addPromise() {
+  const text  = document.getElementById('promiseText').value.trim();
+  const date  = document.getElementById('promiseDate').value;
+  const owner = document.getElementById('promiseOwner').value;
+  if (!text || !date || !activeDrawerCase) return;
+
+  const promises = getPromises(activeDrawerCase);
+  promises.push({ text, date, owner, done: false, created: new Date().toISOString() });
+  store.setCase(activeDrawerCase, 'promises', promises);
+  document.getElementById('promiseText').value = '';
+  document.getElementById('promiseDate').value = '';
+  renderPromiseLog(activeDrawerCase);
+  renderAlertStrip();
+  updateBellBadge();
+  renderTable(currentData);
+}
+
+function markPromiseDone(caseNum, index) {
+  const promises = getPromises(caseNum);
+  promises[index].done = true;
+  store.setCase(caseNum, 'promises', promises);
+  renderPromiseLog(caseNum);
+  renderAlertStrip();
+  updateBellBadge();
+  renderTable(currentData);
+}
+
+function deletePromise(caseNum, index) {
+  const promises = getPromises(caseNum);
+  promises.splice(index, 1);
+  store.setCase(caseNum, 'promises', promises);
+  renderPromiseLog(caseNum);
+  renderAlertStrip();
+  updateBellBadge();
+  renderTable(currentData);
+}
+
+// ─── NOTES ─────────────────────────────────────
+function saveNotes() {
+  if (!activeDrawerCase) return;
+  store.setCase(activeDrawerCase, 'notes', document.getElementById('caseNotes').value);
+}
