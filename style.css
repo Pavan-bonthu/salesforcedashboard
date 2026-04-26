@@ -336,7 +336,7 @@ select option { background: var(--surface2); }
 @keyframes slideIn { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:none} }
 
 /* CHARTS */
-.charts-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; }
+.charts-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; }
 .chart-card {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 12px; padding: 16px; cursor: pointer;
@@ -538,3 +538,26 @@ tr:last-child td { border-bottom: none; }
 
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--text-muted); border-radius: 2px; }
+
+
+/* ── PROD WINDOW BANNER ── */
+.prod-banner {
+  padding: 9px 18px; border-radius: 8px;
+  font-family: var(--mono); font-size: 11px; letter-spacing: 1px;
+  border: 1px solid; transition: all 0.4s;
+}
+.prod-live {
+  background: rgba(239,68,68,0.08);
+  border-color: rgba(239,68,68,0.35);
+  color: #fca5a5;
+}
+.prod-warn {
+  background: rgba(245,158,11,0.08);
+  border-color: rgba(245,158,11,0.35);
+  color: #fcd34d;
+}
+.prod-safe {
+  background: rgba(16,185,129,0.08);
+  border-color: rgba(16,185,129,0.35);
+  color: #6ee7b7;
+}

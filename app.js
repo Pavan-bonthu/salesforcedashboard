@@ -9,6 +9,7 @@ let donutChart = null;
 let barChart = null;
 let pendingWithChart = null;
 let activeDrawerCase = null;
+let envChart = null;
 
 // ─── STORAGE HELPERS ───────────────────────────
 const store = {
@@ -94,6 +95,51 @@ function updateClock() {
 setInterval(updateClock, 1000);
 updateClock();
 
+
+// ── PROD WINDOW BANNER ─────────────────────────
+function updateProdWindow() {
+  const now    = new Date();
+  const hour   = now.getHours();
+  const minute = now.getMinutes();
+  const mins   = hour * 60 + minute;
+
+  // Market: 9:00–15:30. Safe windows: before 9:00 or after 15:30
+  const PRE_OPEN  = 9  * 60;           // 9:00
+  const CLOSE     = 15 * 60 + 30;      // 15:30
+  const WARN_BEFORE = 30;              // warn 30 min before market opens
+
+  let html = '', cls = '';
+
+  if (mins >= PRE_OPEN && mins < CLOSE) {
+    // Market is LIVE — no PROD changes
+    const remaining = CLOSE - mins;
+    const h = Math.floor(remaining / 60), m = remaining % 60;
+    cls  = 'prod-banner prod-live';
+    html = `🔴 MARKET LIVE — PROD changes blocked &nbsp;|&nbsp; Window closes in <strong>${h}h ${m}m</strong> (15:30)`;
+  } else if (mins >= (PRE_OPEN - WARN_BEFORE) && mins < PRE_OPEN) {
+    // Pre-market warning
+    const remaining = PRE_OPEN - mins;
+    cls  = 'prod-banner prod-warn';
+    html = `🟡 Market opens in <strong>${remaining} min</strong> — wrap up PROD changes before 9:00`;
+  } else {
+    // Safe window
+    cls  = 'prod-banner prod-safe';
+    if (mins < PRE_OPEN) {
+      const remaining = PRE_OPEN - mins;
+      const h = Math.floor(remaining / 60), m = remaining % 60;
+      html = `🟢 PROD window open — market opens in ${h}h ${m}m &nbsp;|&nbsp; UAT: anytime`;
+    } else {
+      html = `🟢 PROD window open (post-market) &nbsp;|&nbsp; UAT: anytime`;
+    }
+  }
+
+  let banner = document.getElementById('prodWindowBanner');
+  if (!banner) return;
+  banner.className = cls;
+  banner.innerHTML = html;
+}
+
+setInterval(updateProdWindow, 60000); // refresh every minute
 // ─── FILE UPLOAD ───────────────────────────────
 document.getElementById('upload').addEventListener('change', e => {
   const file = e.target.files[0];
@@ -133,22 +179,23 @@ function processData(data) {
     d.pendingWith = d['Cases pending with'] || 'Unknown';
     d.status      = d['Status'] || 'Pending';
     d.inc         = d['Related Issue: Incident Number'] || '';
+    d.Server      = d['Server (UAT/PROD)'] || 'Unknown';
 
-    const raw = d['Date/Time Opened'];
-    let created = null;
-    if (typeof raw === 'number') created = new Date((raw - 25569) * 86400 * 1000);
-    else if (raw) created = new Date(raw);
+    // ✅ Use Case Age directly from Excel
+const ageRaw = d['Case Age(in number)'] || d['Case Age(in number) '] 
 
-    const age = (created && !isNaN(created))
-      ? Math.max(0, Math.floor((today - created) / 86400000))
-      : null;
-    d.age = age;
+let age = parseInt(ageRaw);
 
-    if (age === null)    d.bucket = 'Unknown';
-    else if (age <= 10)  d.bucket = '1-10';
-    else if (age <= 20)  d.bucket = '10-20';
-    else if (age <= 30)  d.bucket = '20-30';
-    else                 d.bucket = '30+';
+if (isNaN(age)) age = null;
+
+d.age = age;
+
+// ✅ Bucket logic
+if (age === null)       d.bucket = 'Unknown';
+else if (age <= 10)     d.bucket = '1-10';
+else if (age <= 20)     d.bucket = '10-20';
+else if (age <= 30)     d.bucket = '20-30';
+else                    d.bucket = '30+';
   });
 
   allData = data;
@@ -217,7 +264,7 @@ function renderCharts() {
     }
   });
 
-  // Bar (age buckets)
+  //Bar (age buckets)
   const bucketOrder = ['1-10', '10-20', '20-30', '30+', 'Unknown'];
   const bkt = {};
   allData.forEach(d => bkt[d.bucket] = (bkt[d.bucket] || 0) + 1);
@@ -238,7 +285,7 @@ function renderCharts() {
       },
       onClick: (e, el) => { if (el.length) quickFilter('bucketFilter', bL[el[0].index]); }
     }
-  });
+  }); 
 
   // Pending With
   const pw = {};
@@ -263,6 +310,58 @@ function renderCharts() {
       onClick: (e, el) => { if (el.length) quickFilter('pendingFilter', pL[el[0].index]); }
     }
   });
+  // ── PROD vs UAT (FINAL WORKING)
+
+const ser = {};
+allData.forEach(d => {
+  let key = String(d.Server || 'Unknown').trim().toUpperCase();
+  ser[key] = (ser[key] || 0) + 1;
+});
+
+const sL = Object.keys(ser);
+const sV = Object.values(ser);
+
+if (envChart) envChart.destroy();
+
+envChart = new Chart(document.getElementById('envChart'), {
+  type: 'doughnut',
+  data: {
+    labels: sL,
+    datasets: [{
+      data: sV,
+      backgroundColor: ['#ef4444', '#3b82f6', '#64748b'],
+      borderWidth: 0
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    cutout: '65%',
+    plugins: {
+      legend: {
+        position: 'bottom',
+        labels: {
+          color: '#64748b',
+          font: { family: 'Space Mono', size: 10 }
+        }
+      }
+    },
+    // 🔥 CLICK FUNCTION
+    onClick: (e, elements) => {
+      if (!elements.length) return;
+
+      const clicked = sL[elements[0].index]; // PROD / UAT
+
+      const filtered = allData.filter(d => {
+        const raw = String(d.Server || '').trim().toUpperCase();
+        return raw === clicked;
+      });
+
+      currentData = filtered;
+      renderTable(filtered);
+  }
+}
+});
 }
 
 // ─── PROMISE HELPERS ───────────────────────────
@@ -281,6 +380,7 @@ function getCasePromiseStatus(caseNum) {
   }
   return 'upcoming';
 }
+
 
 // ─── ALERT STRIP ───────────────────────────────
 function renderAlertStrip() {
