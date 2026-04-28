@@ -247,7 +247,10 @@ body {
 .promise-body { flex: 1; }
 .promise-text-main { color: var(--text); line-height: 1.4; }
 .promise-meta { font-family: var(--mono); font-size: 10px; margin-top: 3px; display: flex; gap: 8px; }
-.promise-due { }
+.promise-due {  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px; }
 .promise-by { color: var(--text-dim); }
 .promise-actions { display: flex; gap: 4px; }
 .promise-done-btn {
@@ -561,3 +564,5 @@ tr:last-child td { border-bottom: none; }
   border-color: rgba(16,185,129,0.35);
   color: #6ee7b7;
 }
+.overdue { color: #ef4444; font-weight: bold; }
+.today   { color: #f59e0b; font-weight: bold; }

@@ -180,6 +180,7 @@ function processData(data) {
     d.status      = d['Status'] || 'Pending';
     d.inc         = d['Related Issue: Incident Number'] || '';
     d.Server      = d['Server (UAT/PROD)'] || 'Unknown';
+    d.deliveryDate = d['Actual Delivery Date'] || null;
 
     // ✅ Use Case Age directly from Excel
 const ageRaw = d['Case Age(in number)'] || d['Case Age(in number) '] 
@@ -287,30 +288,128 @@ function renderCharts() {
     }
   }); 
 
-  // Pending With
-  const pw = {};
-  allData.filter(d => d.status !== 'Closed').forEach(d => {
-    pw[d.pendingWith] = (pw[d.pendingWith] || 0) + 1;
-  });
-  const pL = Object.keys(pw), pV = Object.values(pw);
 
-  if (pendingWithChart) pendingWithChart.destroy();
-  if (!pL.length) return;
-  pendingWithChart = new Chart(document.getElementById('pendingWithChart'), {
-    type: 'bar',
-    data: { labels: pL, datasets: [{ data: pV, backgroundColor: CHART_COLORS, borderRadius: 4, borderSkipped: false }] },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      indexAxis: 'y',
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b', font: { family: 'Space Mono', size: 10 } } },
-        y: { grid: { display: false }, ticks: { color: '#64748b', font: { family: 'Space Mono', size: 10 } } }
-      },
-      onClick: (e, el) => { if (el.length) quickFilter('pendingFilter', pL[el[0].index]); }
+// ── Pending With (FINAL UPDATED)
+
+const pwTotal = {};
+const pwDelivery = {};
+
+allData
+  .filter(d => d.status !== 'Closed')
+  .forEach(d => {
+    const key = d.pendingWith || 'Unknown';
+
+    // ✅ total count
+    pwTotal[key] = (pwTotal[key] || 0) + 1;
+
+    // ✅ ONLY track delivery for Developers
+    if (
+      key === 'Developers' &&
+      d.deliveryDate &&
+      String(d.deliveryDate).trim() !== ''
+    ) {
+      pwDelivery[key] = (pwDelivery[key] || 0) + 1;
     }
   });
-  // ── PROD vs UAT (FINAL WORKING)
+
+const pL = Object.keys(pwTotal);
+const pV = Object.values(pwTotal);
+
+// 🎨 highlight Developers bar (optional but nice)
+const pwbarColors = pL.map(label =>
+  label === 'Developers' ? '#22c55e' : '#3b82f6'
+);
+
+if (pendingWithChart) pendingWithChart.destroy();
+if (!pL.length) return;
+
+pendingWithChart = new Chart(document.getElementById('pendingWithChart'), {
+  type: 'bar',
+  data: {
+    labels: pL,
+    datasets: [{
+      data: pV,
+      backgroundColor: pwbarColors,
+      borderRadius: 4,
+      borderSkipped: false
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    indexAxis: 'y',
+
+    plugins: {
+      legend: { display: false },
+
+      // ✅ TOOLTIP (ONLY Developers shows delivery)
+      tooltip: {
+        callbacks: {
+          label: function(context) {
+            const key = context.label;
+            const total = pwTotal[key] || 0;
+
+            if (key === 'Developers') {
+              const delivery = pwDelivery[key] || 0;
+              return `Total: ${total} | Delivery: ${delivery}`;
+            }
+
+            return `Total: ${total}`;
+          }
+        }
+      }
+    },
+
+    scales: {
+      x: {
+        grid: { color: 'rgba(255,255,255,0.05)' },
+        ticks: { color: '#64748b', font: { family: 'Space Mono', size: 10 } }
+      },
+      y: {
+        grid: { display: false },
+        ticks: { color: '#64748b', font: { family: 'Space Mono', size: 10 } }
+      }
+    },
+
+    // ✅ CLICK BEHAVIOR
+    onClick: (e, elements) => {
+      if (!elements.length) return;
+
+      const clicked = pL[elements[0].index];
+      let filtered;
+
+      if (clicked === 'Developers') {
+
+        if (e.native.shiftKey) {
+          // 🔥 Developers → only delivery cases
+          filtered = allData.filter(d =>
+            d.pendingWith === 'Developers' &&
+            d.status !== 'Closed' &&
+            d.deliveryDate &&
+            String(d.deliveryDate).trim() !== ''
+          );
+        } else {
+          // normal → all developer cases
+          filtered = allData.filter(d =>
+            d.pendingWith === 'Developers' &&
+            d.status !== 'Closed'
+          );
+        }
+
+      } else {
+        // other teams → normal filter
+        filtered = allData.filter(d =>
+          d.pendingWith === clicked &&
+          d.status !== 'Closed'
+        );
+      }
+
+      currentData = filtered;
+      renderTable(filtered);
+    }
+  }
+});
+// ── PROD vs UAT (FINAL WORKING)
 
 const ser = {};
 allData.forEach(d => {
@@ -766,6 +865,14 @@ function renderTable(data) {
     let rowClass = isStarred ? 'row-starred' : '';
     if (ps === 'overdue') rowClass += ' has-alert';
     else if (ps === 'today') rowClass += ' has-today';
+    let deliveryClass = '';
+if (row.deliveryDate) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const dDate = new Date(row.deliveryDate); dDate.setHours(0,0,0,0);
+
+  if (dDate < today) deliveryClass = 'overdue';
+  else if (dDate.getTime() === today.getTime()) deliveryClass = 'today';
+}
 
     const starClass = isStarred ? 'star-btn starred' : 'star-btn';
     const starTitle = isStarred ? 'Unstar — remove from top' : 'Star — pin to top';
@@ -785,7 +892,11 @@ function renderTable(data) {
         <td>${ageDisplay}</td>
         <td>${row.pendingWith}</td>
         <td>${row.inc ? `<span class="inc-badge">${row.inc}</span>` : '<span style="color:var(--text-muted)">—</span>'}</td>
-        <td>${emailCell}</td>
+        <td class="${deliveryClass}">
+          ${row.deliveryDate 
+           ? new Date(row.deliveryDate).toLocaleDateString('en-IN') 
+           : '—'}
+        </td>
         <td>${promiseCell}</td>
         <td><button class="open-btn" onclick="openDrawer('${caseNum}')">OPEN ›</button></td>
       </tr>
@@ -845,7 +956,10 @@ function renderEmailLog(caseNum) {
       <span class="email-dir-icon">${e.direction === 'received' ? '📥' : '📤'}</span>
       <div class="email-entry-body">
         <div class="email-subject">${e.subject}</div>
-        <div class="email-time">${e.direction.toUpperCase()} · ${e.timestamp}</div>
+        <div class="email-time">
+  ${e.direction.toUpperCase()} · ${e.timestamp}
+  ${e.deliveryDate ? `<br>📅 Delivery: ${e.deliveryDate}` : ''}
+</div>
       </div>
       <button class="email-delete" onclick="deleteEmail('${caseNum}', ${i})">✕</button>
     </div>
@@ -855,20 +969,32 @@ function renderEmailLog(caseNum) {
 function addEmail() {
   const subject = document.getElementById('emailSubject').value.trim();
   const direction = document.getElementById('emailDir').value;
+  const deliveryDate = document.getElementById('actualDeliveryDate').value;
+
   if (!subject || !activeDrawerCase) return;
 
   const emails = getEmails(activeDrawerCase);
+
   emails.push({
     subject,
     direction,
-    timestamp: new Date().toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+    deliveryDate, // ✅ NEW FIELD
+    timestamp: new Date().toLocaleString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
   });
-  store.setCase(activeDrawerCase, 'emails', emails);
-  document.getElementById('emailSubject').value = '';
-  renderEmailLog(activeDrawerCase);
-  renderTable(currentData); // refresh email indicator in table
-}
 
+  store.setCase(activeDrawerCase, 'emails', emails);
+
+  document.getElementById('emailSubject').value = '';
+  document.getElementById('actualDeliveryDate').value = ''; // reset
+
+  renderEmailLog(activeDrawerCase);
+  renderTable(currentData);
+}
 function deleteEmail(caseNum, index) {
   const emails = getEmails(caseNum);
   emails.splice(index, 1);
