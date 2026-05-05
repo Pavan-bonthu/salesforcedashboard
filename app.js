@@ -160,12 +160,81 @@ document.getElementById('upload').addEventListener('change', e => {
 function extractTable(rows) {
   let start = rows.findIndex(r => r?.join(' ').toLowerCase().includes('case number'));
   if (start === -1) return [];
+
   const headers = rows[start];
-  return rows.slice(start + 1).map(r => {
-    const obj = {};
-    headers.forEach((h, i) => obj[h] = r[i]);
-    return obj;
-  }).filter(r => r['Case Number']);
+
+  return rows
+    .slice(start + 1)
+    .map(r => {
+      const obj = {};
+      headers.forEach((h, i) => obj[h] = r[i]);
+      return obj;
+    })
+    // Filter: only rows with a valid case number
+    .filter(r => {
+      const caseNum = String(r['Case Number'] || '').trim();
+      return caseNum !== '' && caseNum.toLowerCase() !== 'total' && !isNaN(caseNum);
+    });
+}
+// ─── DELIVERY ALERT BANNER ─────────────────────
+function renderDeliveryAlertBanner() {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+
+  const overdue = [];
+  const dueToday = [];
+
+  allData.forEach(d => {
+    if (!d.deliveryDate || d.status === 'Closed') return;
+    const dDate = new Date(d.deliveryDate);
+    dDate.setHours(0, 0, 0, 0);
+    const diff = Math.floor((dDate - today) / 86400000);
+    if (diff < 0) overdue.push({ ...d, daysLate: Math.abs(diff) });
+    else if (diff === 0) dueToday.push(d);
+  });
+
+  const bar = document.getElementById('deliveryAlertBar');
+  if (!bar) return;
+
+  const total = overdue.length + dueToday.length;
+  if (!total) {
+    bar.innerHTML = '';
+    bar.style.display = 'none';
+    return;
+  }
+
+  bar.style.display = 'flex';
+
+  // Build dropdown rows
+  const overdueRows = overdue
+    .sort((a, b) => b.daysLate - a.daysLate) // worst first
+    .map(d => `
+      <div class="da-row" onclick="openDrawer('${d['Case Number']}')">
+        <span class="da-row-case">${d['Case Number']}</span>
+        <span class="da-row-account">${d.account}</span>
+        <span class="da-row-badge overdue">${d.daysLate}d late</span>
+      </div>
+    `).join('');
+
+  const todayRows = dueToday
+    .map(d => `
+      <div class="da-row" onclick="openDrawer('${d['Case Number']}')">
+        <span class="da-row-case">${d['Case Number']}</span>
+        <span class="da-row-account">${d.account}</span>
+        <span class="da-row-badge today">due today</span>
+      </div>
+    `).join('');
+
+  bar.innerHTML = `
+    <div class="da-summary">
+      <span>📦</span>
+      <span>DELIVERY</span>
+      <span class="da-count-badge">${total}</span>
+    </div>
+    <div class="da-dropdown">
+      ${overdue.length ? `<div class="da-dropdown-title">⚠ OVERDUE (${overdue.length})</div>${overdueRows}` : ''}
+      ${dueToday.length ? `<div class="da-dropdown-title" style="margin-top:6px">📅 DUE TODAY (${dueToday.length})</div>${todayRows}` : ''}
+    </div>
+  `;
 }
 
 // ─── PROCESS DATA ──────────────────────────────
@@ -174,14 +243,18 @@ function processData(data) {
   today.setHours(0, 0, 0, 0);
 
   data.forEach(d => {
-    d.account     = d['Account Name: Account Name'] || 'Unknown';
     d.owner       = d['Case Owner: Full Name'] || 'Unknown';
     d.pendingWith = d['Cases pending with'] || 'Unknown';
     d.status      = d['Status'] || 'Pending';
     d.inc         = d['Related Issue: Incident Number'] || '';
     d.Server      = d['Server (UAT/PROD)'] || 'Unknown';
     d.deliveryDate = d['Actual Delivery Date'] || null;
+    d.incAge = d['INC Age'] || d['Incident Age'] || null;
+    d.incOwner = d['INC Owner'] || d['Incident owner'] || '—';
+    d.nextUpdate = d['Next Update'] || d['Next Update Date'] || null;
 
+const fullAccount = d['Account Name: Account Name'] || 'Unknown';
+d.account = fullAccount.split(' ')[0]; // 👉 HSBC only
     // ✅ Use Case Age directly from Excel
 const ageRaw = d['Case Age(in number)'] || d['Case Age(in number) '] 
 
@@ -208,40 +281,54 @@ else                    d.bucket = '30+';
   renderWatchlist();
   renderTable(data);
   renderAlertStrip();
+  renderDeliveryAlertBanner();
   updateBellBadge();
 }
 
-// ─── KPI ───────────────────────────────────────
+// Validate case number (8 digits starting with 0)
+function isValidCaseNumber(value) {
+  const v = String(value).trim();
+  return v.startsWith("00");
+}
+
 function renderKPI() {
-  const total   = allData.length;
-  const pending = allData.filter(d => d.status !== 'Closed').length;
-  const incYes  = allData.filter(d => d.inc).length;
+
+  // 1. Filter rows where Case Number starts with "00"
+  const validCases = allData.filter(row =>
+    isValidCaseNumber(row["Case Number"])
+  );
+
+  // 2. Remove duplicate case numbers (optional but recommended)
+  /*const uniqueCases = [
+    ...new Map(validCases.map(v => [v["Case Number"], v])).values()
+  ];*/
+
+  const total   = validCases.length;
+  const pending = validCases.filter(d => d.Status !== 'Closed' && d.status !== 'Closed').length;
+  const incYes  = validCases.filter(d => d.inc).length;
   const incNo   = total - incYes;
 
   document.getElementById('kpi').innerHTML = `
     <div class="kpi-card k-total">
       <div class="kpi-label">TOTAL CASES</div>
       <div class="kpi-value">${total}</div>
-      <div class="kpi-sub">all loaded</div>
+      <div class="kpi-sub">based on Case Number column</div>
     </div>
     <div class="kpi-card k-pending">
       <div class="kpi-label">OPEN / PENDING</div>
       <div class="kpi-value">${pending}</div>
-      <div class="kpi-sub">${Math.round(pending/total*100)||0}% of total</div>
+      <div class="kpi-sub">${Math.round(pending / total * 100) || 0}% of total</div>
     </div>
     <div class="kpi-card k-inc">
       <div class="kpi-label">INC CREATED</div>
       <div class="kpi-value">${incYes}</div>
-      <div class="kpi-sub">incidents logged</div>
     </div>
     <div class="kpi-card k-noinc">
       <div class="kpi-label">NO INC</div>
       <div class="kpi-value">${incNo}</div>
-      <div class="kpi-sub">no incident yet</div>
     </div>
   `;
 }
-
 // ─── CHARTS ────────────────────────────────────
 const CHART_COLORS = [
   '#3b82f6','#06b6d4','#8b5cf6','#10b981',
@@ -351,7 +438,7 @@ pendingWithChart = new Chart(document.getElementById('pendingWithChart'), {
 
             if (key === 'Developers') {
               const delivery = pwDelivery[key] || 0;
-              return `Total: ${total} | Delivery: ${delivery}`;
+              return `Total: ${total} | ETA: ${delivery}`;
             }
 
             return `Total: ${total}`;
@@ -754,8 +841,7 @@ function renderWatchlist() {
             <span class="wl-pending">${row.pendingWith}</span>
             <span class="wl-starred-date">starred ${starredDate}</span>
           </div>
-        </div>
-        <div class="wl-subject">${row['Subject'] || ''}</div>
+        
         <div class="wl-card-bottom">
           ${emailLine}
           <div class="wl-note-row">
@@ -805,6 +891,16 @@ function unstarCase(caseNum) {
   if (starBtn) starBtn.classList.remove('starred');
 }
 
+
+function parseDDMMYYYY(dateStr) {
+  if (!dateStr) return null;
+
+  const parts = String(dateStr).split('/');
+  if (parts.length !== 3) return null;
+
+  const [day, month, year] = parts;
+  return new Date(year, month - 1, day);
+}
 // ─── TABLE ─────────────────────────────────────
 function renderTable(data) {
   const starredInView = data.filter(r => watchlist.isStarred(r['Case Number'])).length;
@@ -840,6 +936,14 @@ function renderTable(data) {
     const statusPill = `<span class="status-pill ${pillClass}">${status}</span>`;
 
     const ageClass   = age > 30 ? 'age-high' : age > 20 ? 'age-med' : 'age-low';
+    const incAge = parseInt(row.incAge);
+
+    let incAgeClass = '';
+    if (!isNaN(incAge)) {
+      if (incAge > 30) incAgeClass = 'age-high';
+      else if (incAge > 20) incAgeClass = 'age-med';
+      else incAgeClass = 'age-low';
+}
     const ageDisplay = age !== null ? `<span class="age-num ${ageClass}">${age}d</span>` : '—';
 
     const lastEmail = emails[emails.length - 1];
@@ -865,6 +969,14 @@ function renderTable(data) {
     let rowClass = isStarred ? 'row-starred' : '';
     if (ps === 'overdue') rowClass += ' has-alert';
     else if (ps === 'today') rowClass += ' has-today';
+    let nextUpdateClass = '';
+if (row.nextUpdate) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const nDate =parseDDMMYYYY(row.nextUpdate); nDate.setHours(0,0,0,0);
+
+  if (nDate < today) nextUpdateClass = 'overdue';
+  else if (nDate.getTime() === today.getTime()) nextUpdateClass = 'today';
+}
     let deliveryClass = '';
 if (row.deliveryDate) {
   const today = new Date(); today.setHours(0,0,0,0);
@@ -886,18 +998,35 @@ if (row.deliveryDate) {
         <td><button id="star-${caseNum}" class="${starClass}" onclick="toggleStar('${caseNum}', this)" title="${starTitle}">★</button></td>
         <td>${statusPill}</td>
         <td><span class="case-num">${caseNum}</span></td>
-        <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${row.account}</td>
+        <td style="max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${row.account}</td>
         <td style="white-space:nowrap">${row.owner}</td>
-        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${row['Subject']||''}</td>
         <td>${ageDisplay}</td>
         <td>${row.pendingWith}</td>
         <td>${row.inc ? `<span class="inc-badge">${row.inc}</span>` : '<span style="color:var(--text-muted)">—</span>'}</td>
+
+        <td>
+  ${
+    !isNaN(incAge)
+      ? `<span class="age-num ${incAgeClass}">${incAge}d</span>`
+      : '—'
+  }
+</td>
+
+        <td>${row.incOwner || '—'}</td>
         <td class="${deliveryClass}">
-          ${row.deliveryDate 
-           ? new Date(row.deliveryDate).toLocaleDateString('en-IN') 
-           : '—'}
-        </td>
-        <td>${promiseCell}</td>
+  ${row.deliveryDate 
+   ? new Date(row.deliveryDate).toLocaleDateString('en-IN') 
+   : '—'}
+</td>
+
+<td class="${nextUpdateClass}">
+  ${row.nextUpdate 
+    ?  parseDDMMYYYY(row.nextUpdate).toLocaleDateString('en-IN') 
+    : '—'}
+</td>
+
+<td>${promiseCell}</td>
+       
         <td><button class="open-btn" onclick="openDrawer('${caseNum}')">OPEN ›</button></td>
       </tr>
     `;
@@ -918,6 +1047,7 @@ function openDrawer(caseNum) {
   document.getElementById('drawerAccount').textContent = caseData.account;
 
   const age = caseData.age;
+  const Subject = caseData.Subject;
   const status = caseData.status || '';
   const sClass = status.toLowerCase().includes('closed') ? 'status-closed' : status.toLowerCase().includes('progress') ? 'status-open' : 'status-pending';
   document.getElementById('drawerMeta').innerHTML = `
@@ -925,6 +1055,7 @@ function openDrawer(caseNum) {
     <span class="meta-tag age-tag">${age !== null ? age + ' DAYS OLD' : 'AGE UNKNOWN'}</span>
     <span class="meta-tag age-tag">${caseData.pendingWith}</span>
     ${caseData.inc ? `<span class="meta-tag" style="border-color:var(--accent3);color:var(--accent3)">${caseData.inc}</span>` : ''}
+    <span class="meta-tag age-tag">${caseData.Subject}</span>
   `;
 
   // Load notes
@@ -958,7 +1089,7 @@ function renderEmailLog(caseNum) {
         <div class="email-subject">${e.subject}</div>
         <div class="email-time">
   ${e.direction.toUpperCase()} · ${e.timestamp}
-  ${e.deliveryDate ? `<br>📅 Delivery: ${e.deliveryDate}` : ''}
+  ${e.deliveryDate ? `<br>📅 ETA: ${e.deliveryDate}` : ''}
 </div>
       </div>
       <button class="email-delete" onclick="deleteEmail('${caseNum}', ${i})">✕</button>

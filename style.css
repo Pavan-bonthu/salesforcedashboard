@@ -566,3 +566,124 @@ tr:last-child td { border-bottom: none; }
 }
 .overdue { color: #ef4444; font-weight: bold; }
 .today   { color: #f59e0b; font-weight: bold; }
+
+
+/* ── DELIVERY ALERT BAR (topbar inline) ──────── */
+.delivery-alert-bar {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+}
+
+.da-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: 6px;
+  padding: 4px 10px;
+  height: 32px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #ef4444;
+  transition: background 0.2s;
+}
+.da-summary:hover {
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.da-count-badge {
+  background: #ef4444;
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+  line-height: 1.6;
+}
+
+.da-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background: #0f172a;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  padding: 10px;
+  min-width: 280px;
+  max-width: 420px;
+  z-index: 9999;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  flex-direction: column;
+  gap: 6px;
+}
+
+.delivery-alert-bar:hover .da-dropdown,
+.delivery-alert-bar.pinned .da-dropdown {
+  display: flex;
+}
+
+.da-dropdown-title {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: #475569;
+  letter-spacing: 0.08em;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  margin-bottom: 2px;
+}
+
+.da-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.15s;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.da-row:hover { background: rgba(255,255,255,0.05); }
+
+.da-row-case {
+  font-weight: 700;
+  color: #e2e8f0;
+  letter-spacing: 0.03em;
+}
+
+.da-row-account {
+  flex: 1;
+  color: #475569;
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.da-row-badge {
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.da-row-badge.overdue {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.da-row-badge.today {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
