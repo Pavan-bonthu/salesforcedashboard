@@ -15,7 +15,6 @@ let envChart = null;
 const store = {
   get: k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
   set: (k, v) => localStorage.setItem(k, JSON.stringify(v)),
-  // Per-case data keyed by case number
   getCase: (caseNum, key) => {
     const all = store.get('caseData') || {};
     return (all[caseNum] || {})[key];
@@ -31,10 +30,8 @@ const store = {
 // ─── WATCHLIST HELPERS ─────────────────────────
 const watchlist = {
   get: () => store.get('watchlist') || {},
-  // Returns { starred: bool, note: string, starredAt: ISO }
   getCase: (caseNum) => (watchlist.get()[caseNum] || null),
   isStarred: (caseNum) => !!(watchlist.get()[caseNum]?.starred),
-
   star: (caseNum, note = '') => {
     const wl = watchlist.get();
     wl[caseNum] = { starred: true, note, starredAt: new Date().toISOString() };
@@ -49,11 +46,9 @@ const watchlist = {
     const wl = watchlist.get();
     if (wl[caseNum]) { wl[caseNum].note = note; store.set('watchlist', wl); }
   },
-  // Returns all starred case numbers that still exist in allData
   activeItems: () => {
     const wl = watchlist.get();
     const starred = Object.keys(wl).filter(k => wl[k]?.starred);
-    // sort by starredAt ascending (oldest star first)
     return starred.sort((a, b) => new Date(wl[a].starredAt) - new Date(wl[b].starredAt));
   }
 };
@@ -95,7 +90,6 @@ function updateClock() {
 setInterval(updateClock, 1000);
 updateClock();
 
-
 // ── PROD WINDOW BANNER ─────────────────────────
 function updateProdWindow() {
   const now    = new Date();
@@ -103,26 +97,22 @@ function updateProdWindow() {
   const minute = now.getMinutes();
   const mins   = hour * 60 + minute;
 
-  // Market: 9:00–15:30. Safe windows: before 9:00 or after 15:30
-  const PRE_OPEN  = 9  * 60;           // 9:00
-  const CLOSE     = 15 * 60 + 30;      // 15:30
-  const WARN_BEFORE = 30;              // warn 30 min before market opens
+  const PRE_OPEN    = 9  * 60;
+  const CLOSE       = 15 * 60 + 30;
+  const WARN_BEFORE = 30;
 
   let html = '', cls = '';
 
   if (mins >= PRE_OPEN && mins < CLOSE) {
-    // Market is LIVE — no PROD changes
     const remaining = CLOSE - mins;
     const h = Math.floor(remaining / 60), m = remaining % 60;
     cls  = 'prod-banner prod-live';
     html = `🔴 MARKET LIVE — PROD changes blocked &nbsp;|&nbsp; Window closes in <strong>${h}h ${m}m</strong> (15:30)`;
   } else if (mins >= (PRE_OPEN - WARN_BEFORE) && mins < PRE_OPEN) {
-    // Pre-market warning
     const remaining = PRE_OPEN - mins;
     cls  = 'prod-banner prod-warn';
     html = `🟡 Market opens in <strong>${remaining} min</strong> — wrap up PROD changes before 9:00`;
   } else {
-    // Safe window
     cls  = 'prod-banner prod-safe';
     if (mins < PRE_OPEN) {
       const remaining = PRE_OPEN - mins;
@@ -138,8 +128,8 @@ function updateProdWindow() {
   banner.className = cls;
   banner.innerHTML = html;
 }
+setInterval(updateProdWindow, 60000);
 
-setInterval(updateProdWindow, 60000); // refresh every minute
 // ─── FILE UPLOAD ───────────────────────────────
 document.getElementById('upload').addEventListener('change', e => {
   const file = e.target.files[0];
@@ -160,9 +150,7 @@ document.getElementById('upload').addEventListener('change', e => {
 function extractTable(rows) {
   let start = rows.findIndex(r => r?.join(' ').toLowerCase().includes('case number'));
   if (start === -1) return [];
-
   const headers = rows[start];
-
   return rows
     .slice(start + 1)
     .map(r => {
@@ -170,106 +158,62 @@ function extractTable(rows) {
       headers.forEach((h, i) => obj[h] = r[i]);
       return obj;
     })
-    // Filter: only rows with a valid case number
     .filter(r => {
       const caseNum = String(r['Case Number'] || '').trim();
       return caseNum !== '' && caseNum.toLowerCase() !== 'total' && !isNaN(caseNum);
     });
 }
-// ─── DELIVERY ALERT BANNER ─────────────────────
-function renderDeliveryAlertBanner() {
-  const today = new Date(); today.setHours(0, 0, 0, 0);
 
-  const overdue = [];
-  const dueToday = [];
+// ─── DATE HELPERS ──────────────────────────────
+function parseDDMMYYYY(dateStr) {
+  if (!dateStr) return null;
+  const parts = String(dateStr).split('/');
+  if (parts.length !== 3) return null;
+  const [day, month, year] = parts;
+  return new Date(year, month - 1, day);
+}
 
-  allData.forEach(d => {
-    if (!d.deliveryDate || d.status === 'Closed') return;
-    const dDate = new Date(d.deliveryDate);
-    dDate.setHours(0, 0, 0, 0);
-    const diff = Math.floor((dDate - today) / 86400000);
-    if (diff < 0) overdue.push({ ...d, daysLate: Math.abs(diff) });
-    else if (diff === 0) dueToday.push(d);
-  });
-
-  const bar = document.getElementById('deliveryAlertBar');
-  if (!bar) return;
-
-  const total = overdue.length + dueToday.length;
-  if (!total) {
-    bar.innerHTML = '';
-    bar.style.display = 'none';
-    return;
+function parseDeliveryDate(raw) {
+  if (!raw || String(raw).trim() === '') return null;
+  if (typeof raw === 'number') {
+    return new Date(Math.round((raw - 25569) * 86400 * 1000));
   }
-
-  bar.style.display = 'flex';
-
-  // Build dropdown rows
-  const overdueRows = overdue
-    .sort((a, b) => b.daysLate - a.daysLate) // worst first
-    .map(d => `
-      <div class="da-row" onclick="openDrawer('${d['Case Number']}')">
-        <span class="da-row-case">${d['Case Number']}</span>
-        <span class="da-row-account">${d.account}</span>
-        <span class="da-row-badge overdue">${d.daysLate}d late</span>
-      </div>
-    `).join('');
-
-  const todayRows = dueToday
-    .map(d => `
-      <div class="da-row" onclick="openDrawer('${d['Case Number']}')">
-        <span class="da-row-case">${d['Case Number']}</span>
-        <span class="da-row-account">${d.account}</span>
-        <span class="da-row-badge today">due today</span>
-      </div>
-    `).join('');
-
-  bar.innerHTML = `
-    <div class="da-summary">
-      <span>📦</span>
-      <span>DELIVERY</span>
-      <span class="da-count-badge">${total}</span>
-    </div>
-    <div class="da-dropdown">
-      ${overdue.length ? `<div class="da-dropdown-title">⚠ OVERDUE (${overdue.length})</div>${overdueRows}` : ''}
-      ${dueToday.length ? `<div class="da-dropdown-title" style="margin-top:6px">📅 DUE TODAY (${dueToday.length})</div>${todayRows}` : ''}
-    </div>
-  `;
+  if (String(raw).includes('/')) {
+    return parseDDMMYYYY(String(raw));
+  }
+  const d = new Date(raw);
+  return isNaN(d.getTime()) ? null : d;
 }
 
 // ─── PROCESS DATA ──────────────────────────────
 function processData(data) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
   data.forEach(d => {
-    d.owner       = d['Case Owner: Full Name'] || 'Unknown';
-    d.pendingWith = d['Cases pending with'] || 'Unknown';
-    d.status      = d['Status'] || 'Pending';
-    d.inc         = d['Related Issue: Incident Number'] || '';
-    d.Server      = d['Server (UAT/PROD)'] || 'Unknown';
+    d.owner        = d['Case Owner: Full Name'] || 'Unknown';
+    d.pendingWith  = d['Cases pending with'] || 'Unknown';
+    d.status       = d['Status'] || 'Pending';
+    d.inc          = d['Related Issue: Incident Number'] || '';
+    d.Server       = d['Server (UAT/PROD)'] || 'Unknown';
     d.deliveryDate = d['Actual Delivery Date'] || null;
-    d.incAge = d['INC Age'] || d['Incident Age'] || null;
-    d.incOwner = d['INC Owner'] || d['Incident owner'] || '—';
-    d.nextUpdate = d['Next Update'] || d['Next Update Date'] || null;
+    d.incAge       = d['INC Age'] || d['Incident Age'] || null;
+    d.incOwner     = d['INC Owner'] || d['Incident owner'] || '—';
+    d.nextUpdate   = d['Next Update'] || d['Next Update Date'] || null;
+    d.latestComment = d['Latest Comments'] || '';
+    d.modifiedBy    = d['Latest Comments Modified By'] || '';
+    d.modifiedDate  = d['Latest Comments Modified Date'] || '';
 
-const fullAccount = d['Account Name: Account Name'] || 'Unknown';
-d.account = fullAccount.split(' ')[0]; // 👉 HSBC only
-    // ✅ Use Case Age directly from Excel
-const ageRaw = d['Case Age(in number)'] || d['Case Age(in number) '] 
+    const fullAccount = d['Account Name: Account Name'] || 'Unknown';
+    d.account = fullAccount.split(' ')[0];
 
-let age = parseInt(ageRaw);
+    const ageRaw = d['Case Age(in number)'] || d['Case Age(in number) '];
+    let age = parseInt(ageRaw);
+    if (isNaN(age)) age = null;
+    d.age = age;
 
-if (isNaN(age)) age = null;
-
-d.age = age;
-
-// ✅ Bucket logic
-if (age === null)       d.bucket = 'Unknown';
-else if (age <= 10)     d.bucket = '1-10';
-else if (age <= 20)     d.bucket = '10-20';
-else if (age <= 30)     d.bucket = '20-30';
-else                    d.bucket = '30+';
+    if (age === null)   d.bucket = 'Unknown';
+    else if (age <= 10) d.bucket = '1-10';
+    else if (age <= 20) d.bucket = '10-20';
+    else if (age <= 30) d.bucket = '20-30';
+    else                d.bucket = '30+';
   });
 
   allData = data;
@@ -285,24 +229,14 @@ else                    d.bucket = '30+';
   updateBellBadge();
 }
 
-// Validate case number (8 digits starting with 0)
+// ─── VALIDATE CASE NUMBER ──────────────────────
 function isValidCaseNumber(value) {
-  const v = String(value).trim();
-  return v.startsWith("00");
+  return String(value).trim().startsWith("00");
 }
 
+// ─── KPI ───────────────────────────────────────
 function renderKPI() {
-
-  // 1. Filter rows where Case Number starts with "00"
-  const validCases = allData.filter(row =>
-    isValidCaseNumber(row["Case Number"])
-  );
-
-  // 2. Remove duplicate case numbers (optional but recommended)
-  /*const uniqueCases = [
-    ...new Map(validCases.map(v => [v["Case Number"], v])).values()
-  ];*/
-
+  const validCases = allData.filter(row => isValidCaseNumber(row["Case Number"]));
   const total   = validCases.length;
   const pending = validCases.filter(d => d.Status !== 'Closed' && d.status !== 'Closed').length;
   const incYes  = validCases.filter(d => d.inc).length;
@@ -329,6 +263,7 @@ function renderKPI() {
     </div>
   `;
 }
+
 // ─── CHARTS ────────────────────────────────────
 const CHART_COLORS = [
   '#3b82f6','#06b6d4','#8b5cf6','#10b981',
@@ -336,7 +271,6 @@ const CHART_COLORS = [
 ];
 
 function renderCharts() {
-  // Donut
   const acc = {};
   allData.forEach(d => acc[d.account] = (acc[d.account] || 0) + 1);
   const aL = Object.keys(acc), aV = Object.values(acc);
@@ -352,13 +286,14 @@ function renderCharts() {
     }
   });
 
-  //Bar (age buckets)
   const bucketOrder = ['1-10', '10-20', '20-30', '30+', 'Unknown'];
   const bkt = {};
   allData.forEach(d => bkt[d.bucket] = (bkt[d.bucket] || 0) + 1);
   const bL = bucketOrder.filter(b => bkt[b]);
   const bV = bL.map(b => bkt[b]);
-  const barColors = bL.map(b => b === '30+' ? '#ef4444' : b === '20-30' ? '#f59e0b' : b === '10-20' ? '#3b82f6' : '#10b981');
+  const barColors = bL.map(b =>
+    b === '30+' ? '#ef4444' : b === '20-30' ? '#f59e0b' : b === '10-20' ? '#3b82f6' : '#10b981'
+  );
 
   if (barChart) barChart.destroy();
   barChart = new Chart(document.getElementById('bar'), {
@@ -373,181 +308,86 @@ function renderCharts() {
       },
       onClick: (e, el) => { if (el.length) quickFilter('bucketFilter', bL[el[0].index]); }
     }
-  }); 
+  });
 
-
-// ── Pending With (FINAL UPDATED)
-
-const pwTotal = {};
-const pwDelivery = {};
-
-allData
-  .filter(d => d.status !== 'Closed')
-  .forEach(d => {
+  const pwTotal = {}, pwDelivery = {};
+  allData.filter(d => d.status !== 'Closed').forEach(d => {
     const key = d.pendingWith || 'Unknown';
-
-    // ✅ total count
     pwTotal[key] = (pwTotal[key] || 0) + 1;
-
-    // ✅ ONLY track delivery for Developers
-    if (
-      key === 'Developers' &&
-      d.deliveryDate &&
-      String(d.deliveryDate).trim() !== ''
-    ) {
+    if (key === 'Developers' && d.deliveryDate && String(d.deliveryDate).trim() !== '') {
       pwDelivery[key] = (pwDelivery[key] || 0) + 1;
     }
   });
 
-const pL = Object.keys(pwTotal);
-const pV = Object.values(pwTotal);
+  const pL = Object.keys(pwTotal);
+  const pV = Object.values(pwTotal);
+  const pwbarColors = pL.map(label => label === 'Developers' ? '#22c55e' : '#3b82f6');
 
-// 🎨 highlight Developers bar (optional but nice)
-const pwbarColors = pL.map(label =>
-  label === 'Developers' ? '#22c55e' : '#3b82f6'
-);
+  if (pendingWithChart) pendingWithChart.destroy();
+  if (!pL.length) return;
 
-if (pendingWithChart) pendingWithChart.destroy();
-if (!pL.length) return;
-
-pendingWithChart = new Chart(document.getElementById('pendingWithChart'), {
-  type: 'bar',
-  data: {
-    labels: pL,
-    datasets: [{
-      data: pV,
-      backgroundColor: pwbarColors,
-      borderRadius: 4,
-      borderSkipped: false
-    }]
-  },
-  options: {
-    responsive: true,
-    maintainAspectRatio: false,
-    indexAxis: 'y',
-
-    plugins: {
-      legend: { display: false },
-
-      // ✅ TOOLTIP (ONLY Developers shows delivery)
-      tooltip: {
-        callbacks: {
-          label: function(context) {
-            const key = context.label;
-            const total = pwTotal[key] || 0;
-
-            if (key === 'Developers') {
-              const delivery = pwDelivery[key] || 0;
-              return `Total: ${total} | ETA: ${delivery}`;
+  pendingWithChart = new Chart(document.getElementById('pendingWithChart'), {
+    type: 'bar',
+    data: { labels: pL, datasets: [{ data: pV, backgroundColor: pwbarColors, borderRadius: 4, borderSkipped: false }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              const key = context.label;
+              const total = pwTotal[key] || 0;
+              if (key === 'Developers') return `Total: ${total} | ETA: ${pwDelivery[key] || 0}`;
+              return `Total: ${total}`;
             }
-
-            return `Total: ${total}`;
           }
         }
-      }
-    },
-
-    scales: {
-      x: {
-        grid: { color: 'rgba(255,255,255,0.05)' },
-        ticks: { color: '#64748b', font: { family: 'Space Mono', size: 10 } }
       },
-      y: {
-        grid: { display: false },
-        ticks: { color: '#64748b', font: { family: 'Space Mono', size: 10 } }
-      }
-    },
-
-    // ✅ CLICK BEHAVIOR
-    onClick: (e, elements) => {
-      if (!elements.length) return;
-
-      const clicked = pL[elements[0].index];
-      let filtered;
-
-      if (clicked === 'Developers') {
-
-        if (e.native.shiftKey) {
-          // 🔥 Developers → only delivery cases
-          filtered = allData.filter(d =>
-            d.pendingWith === 'Developers' &&
-            d.status !== 'Closed' &&
-            d.deliveryDate &&
-            String(d.deliveryDate).trim() !== ''
-          );
+      scales: {
+        x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b', font: { family: 'Space Mono', size: 10 } } },
+        y: { grid: { display: false }, ticks: { color: '#64748b', font: { family: 'Space Mono', size: 10 } } }
+      },
+      onClick: (e, elements) => {
+        if (!elements.length) return;
+        const clicked = pL[elements[0].index];
+        let filtered;
+        if (clicked === 'Developers') {
+          filtered = e.native.shiftKey
+            ? allData.filter(d => d.pendingWith === 'Developers' && d.status !== 'Closed' && d.deliveryDate && String(d.deliveryDate).trim() !== '')
+            : allData.filter(d => d.pendingWith === 'Developers' && d.status !== 'Closed');
         } else {
-          // normal → all developer cases
-          filtered = allData.filter(d =>
-            d.pendingWith === 'Developers' &&
-            d.status !== 'Closed'
-          );
+          filtered = allData.filter(d => d.pendingWith === clicked && d.status !== 'Closed');
         }
-
-      } else {
-        // other teams → normal filter
-        filtered = allData.filter(d =>
-          d.pendingWith === clicked &&
-          d.status !== 'Closed'
-        );
+        currentData = filtered;
+        renderTable(filtered);
       }
-
-      currentData = filtered;
-      renderTable(filtered);
     }
-  }
-});
-// ── PROD vs UAT (FINAL WORKING)
+  });
 
-const ser = {};
-allData.forEach(d => {
-  let key = String(d.Server || 'Unknown').trim().toUpperCase();
-  ser[key] = (ser[key] || 0) + 1;
-});
+  const ser = {};
+  allData.forEach(d => {
+    const key = String(d.Server || 'Unknown').trim().toUpperCase();
+    ser[key] = (ser[key] || 0) + 1;
+  });
+  const sL = Object.keys(ser), sV = Object.values(ser);
 
-const sL = Object.keys(ser);
-const sV = Object.values(ser);
-
-if (envChart) envChart.destroy();
-
-envChart = new Chart(document.getElementById('envChart'), {
-  type: 'doughnut',
-  data: {
-    labels: sL,
-    datasets: [{
-      data: sV,
-      backgroundColor: ['#ef4444', '#3b82f6', '#64748b'],
-      borderWidth: 0
-    }]
-  },
-  options: {
-    responsive: true,
-    maintainAspectRatio: false,
-    cutout: '65%',
-    plugins: {
-      legend: {
-        position: 'bottom',
-        labels: {
-          color: '#64748b',
-          font: { family: 'Space Mono', size: 10 }
-        }
+  if (envChart) envChart.destroy();
+  envChart = new Chart(document.getElementById('envChart'), {
+    type: 'doughnut',
+    data: { labels: sL, datasets: [{ data: sV, backgroundColor: ['#ef4444', '#3b82f6', '#64748b'], borderWidth: 0 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '65%',
+      plugins: { legend: { position: 'bottom', labels: { color: '#64748b', font: { family: 'Space Mono', size: 10 } } } },
+      onClick: (e, elements) => {
+        if (!elements.length) return;
+        const clicked = sL[elements[0].index];
+        const filtered = allData.filter(d => String(d.Server || '').trim().toUpperCase() === clicked);
+        currentData = filtered;
+        renderTable(filtered);
       }
-    },
-    // 🔥 CLICK FUNCTION
-    onClick: (e, elements) => {
-      if (!elements.length) return;
-
-      const clicked = sL[elements[0].index]; // PROD / UAT
-
-      const filtered = allData.filter(d => {
-        const raw = String(d.Server || '').trim().toUpperCase();
-        return raw === clicked;
-      });
-
-      currentData = filtered;
-      renderTable(filtered);
-  }
-}
-});
+    }
+  });
 }
 
 // ─── PROMISE HELPERS ───────────────────────────
@@ -561,12 +401,11 @@ function getCasePromiseStatus(caseNum) {
   for (const p of promises) {
     const d = new Date(p.date); d.setHours(0,0,0,0);
     const diff = Math.floor((d - today) / 86400000);
-    if (diff < 0)  return 'overdue';
+    if (diff < 0)   return 'overdue';
     if (diff === 0) return 'today';
   }
   return 'upcoming';
 }
-
 
 // ─── ALERT STRIP ───────────────────────────────
 function renderAlertStrip() {
@@ -576,8 +415,7 @@ function renderAlertStrip() {
   allData.forEach(d => {
     const ps = getCasePromiseStatus(d['Case Number']);
     if (ps === 'overdue' || ps === 'today') {
-      const promises = getPromises(d['Case Number']).filter(p => !p.done);
-      promises.forEach(p => {
+      getPromises(d['Case Number']).filter(p => !p.done).forEach(p => {
         const pd = new Date(p.date); pd.setHours(0,0,0,0);
         const diff = Math.floor((pd - today) / 86400000);
         if (diff <= 0) alerts.push({ caseNum: d['Case Number'], account: d.account, text: p.text, diff, type: diff < 0 ? 'overdue' : 'today' });
@@ -596,7 +434,6 @@ function renderAlertStrip() {
     </div>
   `).join('');
 
-  // Also populate side panel
   const alertList = document.getElementById('alertList');
   alertList.innerHTML = alerts.map(a => `
     <div class="alert-item ${a.type}" onclick="openDrawer('${a.caseNum}')">
@@ -623,14 +460,268 @@ function toggleAlertPanel() {
   document.getElementById('alertPanel').classList.toggle('open');
 }
 
+// ─── DELIVERY ALERT BANNER ─────────────────────
+function renderDeliveryAlertBanner() {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const overdue = [], dueToday = [];
+
+  allData.forEach(d => {
+    if (!d.deliveryDate || String(d.deliveryDate).trim() === '' || d.status === 'Closed') return;
+    const dDate = parseDeliveryDate(d.deliveryDate);
+    if (!dDate || isNaN(dDate.getTime())) return;
+    dDate.setHours(0, 0, 0, 0);
+    const diff = Math.floor((dDate - today) / 86400000);
+    if (diff < 0) overdue.push({ ...d, daysLate: Math.abs(diff) });
+    else if (diff === 0) dueToday.push(d);
+  });
+
+  const bar = document.getElementById('deliveryAlertBar');
+  if (!bar) return;
+
+  const total = overdue.length + dueToday.length;
+  if (!total) {
+    bar.innerHTML = '';
+    bar.style.display = 'none';
+    return;
+  }
+
+  bar.style.display = 'flex';
+  bar.innerHTML = `
+    <div class="da-summary" onclick="filterByDeliveryAlert()">
+      <span>📦</span>
+      <span>DELIVERY</span>
+      <span class="da-count-badge">${total}</span>
+    </div>
+  `;
+}
+function renderCommentAlertBanner() {
+
+  const today = new Date();
+  today.setHours(0,0,0,0);
+
+  const staleCases = allData.filter(d => {
+
+    if (!d.modifiedDate) return false;
+
+    const modDate = new Date(d.modifiedDate);
+
+    if (isNaN(modDate.getTime())) return false;
+
+    modDate.setHours(0,0,0,0);
+
+    const diff =
+      Math.floor((today - modDate) / 86400000);
+
+    return diff > 3 && d.status !== 'Closed';
+  });
+
+  const bar = document.getElementById('commentAlertBar');
+
+  if (!bar) return;
+
+  if (!staleCases.length) {
+    bar.style.display = 'none';
+    return;
+  }
+
+  bar.style.display = 'flex';
+
+  bar.innerHTML = `
+    <div class="da-summary"
+      onclick="filterOldCommentCases()">
+
+      <span>💬</span>
+
+      <span>NO UPDATE</span>
+
+      <span class="da-count-badge">
+        ${staleCases.length}
+      </span>
+
+    </div>
+  `;
+}
+
+function filterOldCommentCases() {
+
+  const today = new Date();
+  today.setHours(0,0,0,0);
+
+  const filtered = allData.filter(d => {
+
+    if (!d.modifiedDate) return false;
+
+    const modDate = new Date(d.modifiedDate);
+
+    if (isNaN(modDate.getTime())) return false;
+
+    modDate.setHours(0,0,0,0);
+
+    const diff =
+      Math.floor((today - modDate) / 86400000);
+
+    return diff > 3 && d.status !== 'Closed';
+  });
+
+  currentData = filtered;
+
+  renderTable(filtered);
+
+  document.getElementById('caseTable')
+    .scrollIntoView({
+      behavior: 'smooth',
+      block: 'start'
+    });
+}
+// ─── DELIVERY MODAL ────────────────────────────
+function openDeliveryModal() {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const overdue = [], dueToday = [];
+
+  allData.forEach(d => {
+    if (!d.deliveryDate || String(d.deliveryDate).trim() === '' || d.status === 'Closed') return;
+    const dDate = parseDeliveryDate(d.deliveryDate);
+    if (!dDate || isNaN(dDate.getTime())) return;
+    dDate.setHours(0, 0, 0, 0);
+    const diff = Math.floor((dDate - today) / 86400000);
+    if (diff < 0) overdue.push({ ...d, daysLate: Math.abs(diff), parsedDelivery: dDate });
+    else if (diff === 0) dueToday.push({ ...d, daysLate: 0, parsedDelivery: dDate });
+  });
+
+  overdue.sort((a, b) => b.daysLate - a.daysLate);
+
+  const buildRow = (d, type) => {
+    const daysLabel = type === 'overdue'
+      ? `<span class="da-row-badge overdue">${d.daysLate}d late</span>`
+      : `<span class="da-row-badge today">due today</span>`;
+
+    const deliveryFormatted = d.parsedDelivery
+      ? d.parsedDelivery.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+      : '—';
+
+    const age = d.age !== null
+      ? `<span class="age-num ${d.age > 30 ? 'age-high' : d.age > 20 ? 'age-med' : 'age-low'}">${d.age}d</span>`
+      : '—';
+
+    const status  = d.status || '';
+    const sLower  = status.toLowerCase();
+    const pillClass = sLower.includes('closed') ? 'pill-closed'
+      : sLower.includes('progress') ? 'pill-open' : 'pill-pending';
+
+    const incAge      = parseInt(d.incAge);
+    const incAgeClass = !isNaN(incAge)
+      ? incAge > 30 ? 'age-high' : incAge > 20 ? 'age-med' : 'age-low' : '';
+
+    return `
+      <tr class="dm-row"
+        onclick="closeDeliveryModal(); filterByDeliveryAlert(); setTimeout(() => openDrawer('${d['Case Number']}'), 300)">
+        <td><span class="status-pill ${pillClass}">${status}</span></td>
+        <td><span class="case-num">${d['Case Number']}</span></td>
+        <td>${d.account}</td>
+        <td style="white-space:nowrap">${d.owner}</td>
+        <td>${age}</td>
+        <td>${d.pendingWith}</td>
+        <td>${d.inc ? `<span class="inc-badge">${d.inc}</span>` : '<span style="color:var(--text-muted)">—</span>'}</td>
+        <td>${!isNaN(incAge) ? `<span class="age-num ${incAgeClass}">${incAge}d</span>` : '—'}</td>
+        <td style="color:#94a3b8;white-space:nowrap">${deliveryFormatted}</td>
+        <td>${daysLabel}</td>
+        <td>
+          <button class="open-btn"
+            onclick="event.stopPropagation(); closeDeliveryModal(); filterByDeliveryAlert(); setTimeout(() => openDrawer('${d['Case Number']}'), 300)">
+            OPEN ›
+          </button>
+        </td>
+      </tr>
+    `;
+  };
+
+  let html = '';
+
+  if (overdue.length) {
+    html += `
+      <div class="dm-section-label">⚠ OVERDUE — ${overdue.length} CASES</div>
+      <div class="table-wrap">
+        <table class="dm-table">
+          <thead><tr>
+            <th>STATUS</th><th>CASE #</th><th>ACCOUNT</th><th>OWNER</th>
+            <th>AGE</th><th>PENDING WITH</th><th>INC</th><th>INC AGE</th>
+            <th>DELIVERY DATE</th><th>OVERDUE BY</th><th></th>
+          </tr></thead>
+          <tbody>${overdue.map(d => buildRow(d, 'overdue')).join('')}</tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  if (dueToday.length) {
+    html += `
+      <div class="dm-section-label" style="margin-top:24px;color:#f59e0b;border-color:rgba(245,158,11,0.2)">
+        📅 DUE TODAY — ${dueToday.length} CASES
+      </div>
+      <div class="table-wrap">
+        <table class="dm-table">
+          <thead><tr>
+            <th>STATUS</th><th>CASE #</th><th>ACCOUNT</th><th>OWNER</th>
+            <th>AGE</th><th>PENDING WITH</th><th>INC</th><th>INC AGE</th>
+            <th>DELIVERY DATE</th><th></th><th></th>
+          </tr></thead>
+          <tbody>${dueToday.map(d => buildRow(d, 'today')).join('')}</tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  if (!overdue.length && !dueToday.length) {
+    html = `<div style="color:var(--text-dim);padding:48px;text-align:center;font-family:var(--mono)">✅ No delivery alerts right now.</div>`;
+  }
+
+  // VIEW ALL button
+  if (overdue.length || dueToday.length) {
+    html += `
+      <div style="padding:20px 0 4px;text-align:right">
+        <button class="modal-cta" style="font-size:11px;padding:8px 20px"
+          onclick="closeDeliveryModal(); filterByDeliveryAlert()">
+          VIEW ALL ${overdue.length + dueToday.length} CASES IN TABLE ›
+        </button>
+      </div>
+    `;
+  }
+
+  document.getElementById('deliveryModalContent').innerHTML = html;
+  document.getElementById('deliveryModal').classList.remove('hidden');
+}
+
+function closeDeliveryModal() {
+  document.getElementById('deliveryModal').classList.add('hidden');
+}
+
+// ─── FILTER BY DELIVERY ALERT ──────────────────
+function filterByDeliveryAlert() {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+
+  const filtered = allData.filter(d => {
+    if (!d.deliveryDate || String(d.deliveryDate).trim() === '' || d.status === 'Closed') return false;
+    const dDate = parseDeliveryDate(d.deliveryDate);
+    if (!dDate || isNaN(dDate.getTime())) return false;
+    dDate.setHours(0, 0, 0, 0);
+    return Math.floor((dDate - today) / 86400000) <= 0;
+  });
+
+  currentData = filtered;
+  renderTable(filtered);
+  renderWatchlist();
+
+  document.getElementById('caseTable').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 // ─── DAILY BRIEFING ────────────────────────────
 function showBriefing() {
   const today = new Date(); today.setHours(0,0,0,0);
   const todayKey = today.toDateString();
-  if (store.get('lastBriefing') === todayKey) return; // show once per day
+  if (store.get('lastBriefing') === todayKey) return;
 
-  const total   = allData.length;
-  const pending = allData.filter(d => d.status !== 'Closed').length;
+  const total    = allData.length;
+  const pending  = allData.filter(d => d.status !== 'Closed').length;
   const critical = allData.filter(d => d.age > 30).length;
 
   const promises = [];
@@ -646,11 +737,8 @@ function showBriefing() {
   const dueToday = promises.filter(p => p.diff === 0);
   const upcoming = promises.filter(p => p.diff > 0 && p.diff <= 3);
 
-  // Cases with no email in last 3 days (flag if has email entries)
   const noEmailCases = allData.filter(d => {
-    const emails = getEmails(d['Case Number']);
-    if (!emails.length && d.status !== 'Closed') return true;
-    return false;
+    return !getEmails(d['Case Number']).length && d.status !== 'Closed';
   }).slice(0, 5);
 
   let html = `
@@ -732,9 +820,9 @@ function renderFilters() {
 
 function createDropdown(id, key) {
   const vals = [...new Set(allData.map(d => d[key]).filter(Boolean))].sort();
-  const sel = document.getElementById(id);
+  const sel  = document.getElementById(id);
   sel.innerHTML = `<option value="">All</option>` + vals.map(v => `<option value="${v}">${v}</option>`).join('');
-  sel.onchange = applyFilters;
+  sel.onchange  = applyFilters;
 }
 
 function quickFilter(filterId, value) {
@@ -758,10 +846,10 @@ function applyFilters() {
   if (promiseF) {
     filtered = filtered.filter(d => {
       const ps = getCasePromiseStatus(d['Case Number']);
-      if (promiseF === 'overdue')  return ps === 'overdue';
-      if (promiseF === 'today')    return ps === 'today';
-      if (promiseF === 'pending')  return !!ps;
-      if (promiseF === 'none')     return !ps;
+      if (promiseF === 'overdue') return ps === 'overdue';
+      if (promiseF === 'today')   return ps === 'today';
+      if (promiseF === 'pending') return !!ps;
+      if (promiseF === 'none')    return !ps;
       return true;
     });
   }
@@ -785,10 +873,10 @@ function renderWatchlist() {
   if (!el) return;
 
   const starred = watchlist.activeItems();
-  // Match starred case nums to live allData rows
   const rows = starred
-  .map(cn => currentData.find(d => String(d['Case Number']) === String(cn)))
-  .filter(Boolean);
+    .map(cn => currentData.find(d => String(d['Case Number']) === String(cn)))
+    .filter(Boolean);
+
   const kpiEl = document.getElementById('kpiWatchCount');
   if (kpiEl) kpiEl.textContent = rows.length;
 
@@ -801,29 +889,24 @@ function renderWatchlist() {
     return;
   }
 
-  const today = new Date(); today.setHours(0,0,0,0);
-
   el.innerHTML = rows.map(row => {
-    const caseNum = row['Case Number'];
-    const wlData  = watchlist.getCase(caseNum);
-    const note    = wlData?.note || '';
-    const ps      = getCasePromiseStatus(caseNum);
-    const emails  = getEmails(caseNum);
-    const age     = row.age;
+    const caseNum  = row['Case Number'];
+    const wlData   = watchlist.getCase(caseNum);
+    const note     = wlData?.note || '';
+    const ps       = getCasePromiseStatus(caseNum);
+    const emails   = getEmails(caseNum);
+    const age      = row.age;
     const ageClass = age > 30 ? 'age-high' : age > 20 ? 'age-med' : 'age-low';
 
-    // Promise badge
     let promiseBadge = '';
     if (ps === 'overdue') promiseBadge = `<span class="wl-badge wl-badge-red">PROMISE OVERDUE</span>`;
     else if (ps === 'today') promiseBadge = `<span class="wl-badge wl-badge-yellow">PROMISE DUE TODAY</span>`;
 
-    // Last email
     const lastEmail = emails[emails.length - 1];
     const emailLine = lastEmail
       ? `<span class="wl-email">${lastEmail.direction === 'received' ? '📥' : '📤'} ${lastEmail.subject}</span>`
       : `<span class="wl-email wl-email-none">no email logged</span>`;
 
-    // Starred-at label
     const starredDate = wlData?.starredAt
       ? new Date(wlData.starredAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
       : '';
@@ -841,7 +924,6 @@ function renderWatchlist() {
             <span class="wl-pending">${row.pendingWith}</span>
             <span class="wl-starred-date">starred ${starredDate}</span>
           </div>
-        
         <div class="wl-card-bottom">
           ${emailLine}
           <div class="wl-note-row">
@@ -876,7 +958,6 @@ function toggleStar(caseNum, btn) {
 
 function unstarCase(caseNum) {
   watchlist.unstar(caseNum);
-  // flash the card out
   const card = document.getElementById(`wlcard-${caseNum}`);
   if (card) {
     card.style.transition = 'opacity 0.3s, transform 0.3s';
@@ -886,21 +967,10 @@ function unstarCase(caseNum) {
   } else {
     renderWatchlist();
   }
-  // Update the star button in the main table if visible
   const starBtn = document.getElementById(`star-${caseNum}`);
   if (starBtn) starBtn.classList.remove('starred');
 }
 
-
-function parseDDMMYYYY(dateStr) {
-  if (!dateStr) return null;
-
-  const parts = String(dateStr).split('/');
-  if (parts.length !== 3) return null;
-
-  const [day, month, year] = parts;
-  return new Date(year, month - 1, day);
-}
 // ─── TABLE ─────────────────────────────────────
 function renderTable(data) {
   const starredInView = data.filter(r => watchlist.isStarred(r['Case Number'])).length;
@@ -912,8 +982,7 @@ function renderTable(data) {
   const today = new Date(); today.setHours(0,0,0,0);
   const tbody = document.getElementById('tableBody');
 
-  // ── Sort: starred first (oldest star at top), then rest
-  const starred   = data
+  const starred = data
     .filter(r => watchlist.isStarred(r['Case Number']))
     .sort((a, b) => {
       const wa = watchlist.getCase(a['Case Number'])?.starredAt || '';
@@ -923,33 +992,23 @@ function renderTable(data) {
   const unstarred = data.filter(r => !watchlist.isStarred(r['Case Number']));
 
   const buildRow = (row, addDivider) => {
-    const caseNum  = row['Case Number'];
-    const status   = row.status || '';
-    const age      = row.age;
-    const emails   = getEmails(caseNum);
-    const ps       = getCasePromiseStatus(caseNum);
-    const promises = getPromises(caseNum).filter(p => !p.done);
+    const caseNum   = row['Case Number'];
+    const status    = row.status || '';
+    const age       = row.age;
+    const ps        = getCasePromiseStatus(caseNum);
+    const promises  = getPromises(caseNum).filter(p => !p.done);
     const isStarred = watchlist.isStarred(caseNum);
 
-    const sLower = status.toLowerCase();
-    const pillClass = sLower.includes('closed') ? 'pill-closed' : sLower.includes('progress') ? 'pill-open' : 'pill-pending';
-    const statusPill = `<span class="status-pill ${pillClass}">${status}</span>`;
+    const sLower    = status.toLowerCase();
+    const pillClass = sLower.includes('closed') ? 'pill-closed'
+      : sLower.includes('progress') ? 'pill-open' : 'pill-pending';
 
-    const ageClass   = age > 30 ? 'age-high' : age > 20 ? 'age-med' : 'age-low';
-    const incAge = parseInt(row.incAge);
+    const ageClass  = age > 30 ? 'age-high' : age > 20 ? 'age-med' : 'age-low';
+    const incAge    = parseInt(row.incAge);
+    const incAgeClass = !isNaN(incAge)
+      ? incAge > 30 ? 'age-high' : incAge > 20 ? 'age-med' : 'age-low' : '';
 
-    let incAgeClass = '';
-    if (!isNaN(incAge)) {
-      if (incAge > 30) incAgeClass = 'age-high';
-      else if (incAge > 20) incAgeClass = 'age-med';
-      else incAgeClass = 'age-low';
-}
     const ageDisplay = age !== null ? `<span class="age-num ${ageClass}">${age}d</span>` : '—';
-
-    const lastEmail = emails[emails.length - 1];
-    const emailCell = lastEmail
-      ? `<span class="email-indicator"><span class="email-dot has-email"></span>${lastEmail.direction === 'received' ? '📥' : '📤'} ${emails.length}</span>`
-      : `<span class="email-indicator"><span class="email-dot no-email"></span><span style="color:var(--text-muted)">none</span></span>`;
 
     let promiseCell = `<span class="promise-indicator promise-none">—</span>`;
     if (ps === 'overdue') {
@@ -969,64 +1028,52 @@ function renderTable(data) {
     let rowClass = isStarred ? 'row-starred' : '';
     if (ps === 'overdue') rowClass += ' has-alert';
     else if (ps === 'today') rowClass += ' has-today';
+
     let nextUpdateClass = '';
-if (row.nextUpdate) {
-  const today = new Date(); today.setHours(0,0,0,0);
-  const nDate =parseDDMMYYYY(row.nextUpdate); nDate.setHours(0,0,0,0);
+    if (row.nextUpdate) {
+      const nDate = parseDDMMYYYY(row.nextUpdate);
+      if (nDate) {
+        nDate.setHours(0,0,0,0);
+        if (nDate < today) nextUpdateClass = 'overdue';
+        else if (nDate.getTime() === today.getTime()) nextUpdateClass = 'today';
+      }
+    }
 
-  if (nDate < today) nextUpdateClass = 'overdue';
-  else if (nDate.getTime() === today.getTime()) nextUpdateClass = 'today';
-}
-    let deliveryClass = '';
-if (row.deliveryDate) {
-  const today = new Date(); today.setHours(0,0,0,0);
-  const dDate = new Date(row.deliveryDate); dDate.setHours(0,0,0,0);
-
-  if (dDate < today) deliveryClass = 'overdue';
-  else if (dDate.getTime() === today.getTime()) deliveryClass = 'today';
-}
+    let deliveryClass = '', deliveryDisplay = '—';
+    if (row.deliveryDate) {
+      const dDate = parseDeliveryDate(row.deliveryDate);
+      if (dDate && !isNaN(dDate.getTime())) {
+        dDate.setHours(0,0,0,0);
+        if (dDate < today) deliveryClass = 'overdue';
+        else if (dDate.getTime() === today.getTime()) deliveryClass = 'today';
+        deliveryDisplay = dDate.toLocaleDateString('en-IN');
+      }
+    }
 
     const starClass = isStarred ? 'star-btn starred' : 'star-btn';
     const starTitle = isStarred ? 'Unstar — remove from top' : 'Star — pin to top';
 
     const divider = addDivider
-      ? `<tr class="table-divider"><td colspan="12"><span>── WATCHLIST ──────────────────── REST OF CASES ──</span></td></tr>`
+      ? `<tr class="table-divider"><td colspan="14"><span>── WATCHLIST ──────────────────── REST OF CASES ──</span></td></tr>`
       : '';
 
     return divider + `
       <tr class="${rowClass.trim()}">
         <td><button id="star-${caseNum}" class="${starClass}" onclick="toggleStar('${caseNum}', this)" title="${starTitle}">★</button></td>
-        <td>${statusPill}</td>
+        <td><span class="status-pill ${pillClass}">${status}</span></td>
         <td><span class="case-num">${caseNum}</span></td>
         <td style="max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${row.account}</td>
         <td style="white-space:nowrap">${row.owner}</td>
         <td>${ageDisplay}</td>
         <td>${row.pendingWith}</td>
         <td>${row.inc ? `<span class="inc-badge">${row.inc}</span>` : '<span style="color:var(--text-muted)">—</span>'}</td>
-
-        <td>
-  ${
-    !isNaN(incAge)
-      ? `<span class="age-num ${incAgeClass}">${incAge}d</span>`
-      : '—'
-  }
-</td>
-
+        <td>${!isNaN(incAge) ? `<span class="age-num ${incAgeClass}">${incAge}d</span>` : '—'}</td>
         <td>${row.incOwner || '—'}</td>
-        <td class="${deliveryClass}">
-  ${row.deliveryDate 
-   ? new Date(row.deliveryDate).toLocaleDateString('en-IN') 
-   : '—'}
-</td>
-
-<td class="${nextUpdateClass}">
-  ${row.nextUpdate 
-    ?  parseDDMMYYYY(row.nextUpdate).toLocaleDateString('en-IN') 
-    : '—'}
-</td>
-
-<td>${promiseCell}</td>
-       
+        <td class="${deliveryClass}">${deliveryDisplay}</td>
+        <td class="${nextUpdateClass}">
+          ${row.nextUpdate ? (parseDDMMYYYY(row.nextUpdate)?.toLocaleDateString('en-IN') || '—') : '—'}
+        </td>
+        <td>${promiseCell}</td>
         <td><button class="open-btn" onclick="openDrawer('${caseNum}')">OPEN ›</button></td>
       </tr>
     `;
@@ -1046,10 +1093,11 @@ function openDrawer(caseNum) {
   document.getElementById('drawerCaseNum').textContent = caseNum;
   document.getElementById('drawerAccount').textContent = caseData.account;
 
-  const age = caseData.age;
-  const Subject = caseData.Subject;
+  const age    = caseData.age;
   const status = caseData.status || '';
-  const sClass = status.toLowerCase().includes('closed') ? 'status-closed' : status.toLowerCase().includes('progress') ? 'status-open' : 'status-pending';
+  const sClass = status.toLowerCase().includes('closed') ? 'status-closed'
+    : status.toLowerCase().includes('progress') ? 'status-open' : 'status-pending';
+
   document.getElementById('drawerMeta').innerHTML = `
     <span class="meta-tag ${sClass}">${status}</span>
     <span class="meta-tag age-tag">${age !== null ? age + ' DAYS OLD' : 'AGE UNKNOWN'}</span>
@@ -1057,10 +1105,30 @@ function openDrawer(caseNum) {
     ${caseData.inc ? `<span class="meta-tag" style="border-color:var(--accent3);color:var(--accent3)">${caseData.inc}</span>` : ''}
     <span class="meta-tag age-tag">${caseData.Subject}</span>
   `;
+  const commentSection = `
+  <div class="latest-comment-box">
+    <div class="lc-title">LATEST COMMENT</div>
 
-  // Load notes
+    <div class="lc-comment">
+      ${caseData.latestComment || 'No comments available'}
+    </div>
+
+    <div class="lc-meta">
+      👤 ${caseData.modifiedBy || '—'}
+      <span style="margin-left:12px">
+        📅 ${caseData.modifiedDate || '—'}
+      </span>
+    </div>
+  </div>
+`;
+document.getElementById('drawerMeta').insertAdjacentHTML(
+  'beforeend',
+  commentSection
+);
+
+
+
   document.getElementById('caseNotes').value = store.getCase(caseNum, 'notes') || '';
-
   renderEmailLog(caseNum);
   renderPromiseLog(caseNum);
 
@@ -1088,9 +1156,9 @@ function renderEmailLog(caseNum) {
       <div class="email-entry-body">
         <div class="email-subject">${e.subject}</div>
         <div class="email-time">
-  ${e.direction.toUpperCase()} · ${e.timestamp}
-  ${e.deliveryDate ? `<br>📅 ETA: ${e.deliveryDate}` : ''}
-</div>
+          ${e.direction.toUpperCase()} · ${e.timestamp}
+          ${e.deliveryDate ? `<br>📅 ETA: ${e.deliveryDate}` : ''}
+        </div>
       </div>
       <button class="email-delete" onclick="deleteEmail('${caseNum}', ${i})">✕</button>
     </div>
@@ -1098,34 +1166,24 @@ function renderEmailLog(caseNum) {
 }
 
 function addEmail() {
-  const subject = document.getElementById('emailSubject').value.trim();
-  const direction = document.getElementById('emailDir').value;
+  const subject      = document.getElementById('emailSubject').value.trim();
+  const direction    = document.getElementById('emailDir').value;
   const deliveryDate = document.getElementById('actualDeliveryDate').value;
-
   if (!subject || !activeDrawerCase) return;
 
   const emails = getEmails(activeDrawerCase);
-
   emails.push({
-    subject,
-    direction,
-    deliveryDate, // ✅ NEW FIELD
-    timestamp: new Date().toLocaleString('en-IN', {
-      day: '2-digit',
-      month: 'short',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
+    subject, direction, deliveryDate,
+    timestamp: new Date().toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
   });
 
   store.setCase(activeDrawerCase, 'emails', emails);
-
   document.getElementById('emailSubject').value = '';
-  document.getElementById('actualDeliveryDate').value = ''; // reset
-
+  document.getElementById('actualDeliveryDate').value = '';
   renderEmailLog(activeDrawerCase);
   renderTable(currentData);
 }
+
 function deleteEmail(caseNum, index) {
   const emails = getEmails(caseNum);
   emails.splice(index, 1);
@@ -1149,12 +1207,15 @@ function renderPromiseLog(caseNum) {
     const pd = new Date(p.date); pd.setHours(0,0,0,0);
     const diff = Math.floor((pd - today) / 86400000);
     let cls = 'upcoming', dueLabel = '';
-    if (p.done) { cls = 'done'; dueLabel = 'DONE'; }
-    else if (diff < 0) { cls = 'overdue'; dueLabel = `${Math.abs(diff)}D OVERDUE`; }
-    else if (diff === 0) { cls = 'due-today'; dueLabel = 'DUE TODAY'; }
+    if (p.done)        { cls = 'done';      dueLabel = 'DONE'; }
+    else if (diff < 0)  { cls = 'overdue';   dueLabel = `${Math.abs(diff)}D OVERDUE`; }
+    else if (diff === 0){ cls = 'due-today'; dueLabel = 'DUE TODAY'; }
     else dueLabel = `in ${diff}d`;
 
-    const dueColor = p.done ? 'var(--text-dim)' : diff < 0 ? 'var(--danger)' : diff === 0 ? 'var(--warning)' : 'var(--success)';
+    const dueColor = p.done ? 'var(--text-dim)'
+      : diff < 0  ? 'var(--danger)'
+      : diff === 0 ? 'var(--warning)'
+      : 'var(--success)';
 
     return `
       <div class="promise-entry ${cls}">

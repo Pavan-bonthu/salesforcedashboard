@@ -687,3 +687,30 @@ tr:last-child td { border-bottom: none; }
   color: #f59e0b;
   border: 1px solid rgba(245, 158, 11, 0.3);
 }
+
+.latest-comment-box{
+  margin-top:14px;
+  padding:14px;
+  border:1px solid rgba(255,255,255,0.08);
+  border-radius:12px;
+  background:rgba(255,255,255,0.02);
+}
+
+.lc-title{
+  font-size:11px;
+  letter-spacing:2px;
+  color:#64748b;
+  margin-bottom:10px;
+}
+
+.lc-comment{
+  color:#e2e8f0;
+  line-height:1.6;
+  font-size:14px;
+}
+
+.lc-meta{
+  margin-top:10px;
+  color:#94a3b8;
+  font-size:12px;
+}
