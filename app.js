@@ -200,6 +200,7 @@ function processData(data) {
     d.latestComment = d['Latest Comments'] || '';
     d.modifiedBy    = d['Latest Comments Modified By'] || '';
     d.modifiedDate  = d['Latest Comments Modified Date'] || '';
+    d.emailLastSent = d['Email Last Sent Date and Time'] || null;
 
     const fullAccount = d['Account Name: Account Name'] || 'Unknown';
     d.account = fullAccount.split(' ')[0];
@@ -226,6 +227,8 @@ function processData(data) {
   renderTable(data);
   renderAlertStrip();
   renderDeliveryAlertBanner();
+  renderCommentAlertBanner();
+  renderNextUpdateAlertBanner();
   updateBellBadge();
 }
 
@@ -489,89 +492,118 @@ function renderDeliveryAlertBanner() {
   bar.innerHTML = `
     <div class="da-summary" onclick="filterByDeliveryAlert()">
       <span>📦</span>
-      <span>DELIVERY</span>
+      <span>ETA</span>
       <span class="da-count-badge">${total}</span>
     </div>
   `;
 }
+// ─── EMAIL LAST SENT ALERT BANNER ──────────────
 function renderCommentAlertBanner() {
-
-  const today = new Date();
-  today.setHours(0,0,0,0);
+  const today = new Date(); today.setHours(0,0,0,0);
 
   const staleCases = allData.filter(d => {
-
-    if (!d.modifiedDate) return false;
-
-    const modDate = new Date(d.modifiedDate);
-
-    if (isNaN(modDate.getTime())) return false;
-
-    modDate.setHours(0,0,0,0);
-
-    const diff =
-      Math.floor((today - modDate) / 86400000);
-
-    return diff > 3 && d.status !== 'Closed';
+    if (d.status === 'Closed') return false;
+    if (!d.emailLastSent) return true; // never emailed = always stale
+    const sentDate = new Date(d.emailLastSent);
+    if (isNaN(sentDate.getTime())) return true;
+    sentDate.setHours(0,0,0,0);
+    const diff = Math.floor((today - sentDate) / 86400000);
+    return diff > 3;
   });
 
   const bar = document.getElementById('commentAlertBar');
-
   if (!bar) return;
 
   if (!staleCases.length) {
     bar.style.display = 'none';
+    bar.innerHTML = '';
     return;
   }
 
   bar.style.display = 'flex';
-
   bar.innerHTML = `
-    <div class="da-summary"
-      onclick="filterOldCommentCases()">
-
-      <span>💬</span>
-
-      <span>NO UPDATE</span>
-
-      <span class="da-count-badge">
-        ${staleCases.length}
-      </span>
-
+    <div class="da-summary" onclick="filterOldCommentCases()">
+      <span>📧</span>
+      <span>Last EMAIL</span>
+      <span class="da-count-badge">${staleCases.length}</span>
     </div>
   `;
 }
 
 function filterOldCommentCases() {
-
-  const today = new Date();
-  today.setHours(0,0,0,0);
+  const today = new Date(); today.setHours(0,0,0,0);
 
   const filtered = allData.filter(d => {
-
-    if (!d.modifiedDate) return false;
-
-    const modDate = new Date(d.modifiedDate);
-
-    if (isNaN(modDate.getTime())) return false;
-
-    modDate.setHours(0,0,0,0);
-
-    const diff =
-      Math.floor((today - modDate) / 86400000);
-
-    return diff > 3 && d.status !== 'Closed';
+    if (d.status === 'Closed') return false;
+    if (!d.emailLastSent) return true;
+    const sentDate = new Date(d.emailLastSent);
+    if (isNaN(sentDate.getTime())) return true;
+    sentDate.setHours(0,0,0,0);
+    const diff = Math.floor((today - sentDate) / 86400000);
+    return diff > 3;
   });
 
   currentData = filtered;
-
   renderTable(filtered);
+  document.getElementById('caseTable').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 
-  document.getElementById('caseTable')
-    .scrollIntoView({
-      behavior: 'smooth',
-      block: 'start'
-    });
+// ─── NEXT UPDATE ALERT BANNER ──────────────────
+function renderNextUpdateAlertBanner() {
+  const today = new Date(); today.setHours(0,0,0,0);
+
+  const overdueCases = allData.filter(d => {
+    if (d.status === 'Closed') return false;
+    if (!d.nextUpdate) return false;
+    const nDate = parseDDMMYYYY(String(d.nextUpdate));
+    if (!nDate || isNaN(nDate.getTime())) return false;
+    nDate.setHours(0,0,0,0);
+    return nDate < today;
+  });
+
+  // reuse or create a third bar slot
+  let bar = document.getElementById('nextUpdateAlertBar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'nextUpdateAlertBar';
+    bar.className = 'delivery-alert-bar';
+    // insert after commentAlertBar
+    const commentBar = document.getElementById('commentAlertBar');
+    commentBar.parentNode.insertBefore(bar, commentBar.nextSibling);
+  }
+
+  if (!overdueCases.length) {
+    bar.style.display = 'none';
+    bar.innerHTML = '';
+    return;
+  }
+
+  bar.style.display = 'flex';
+  bar.innerHTML = `
+    <div class="da-summary" style="color:#f59e0b;background:rgba(245,158,11,0.08);border-color:rgba(245,158,11,0.25);"
+      onclick="filterOverdueNextUpdate()">
+      <span>📅</span>
+      <span>NU</span>
+      <span class="da-count-badge" style="background:#f59e0b;">${overdueCases.length}</span>
+    </div>
+  `;
+}
+
+function filterOverdueNextUpdate() {
+  const today = new Date(); today.setHours(0,0,0,0);
+
+  const filtered = allData.filter(d => {
+    if (d.status === 'Closed') return false;
+    if (!d.nextUpdate) return false;
+    const nDate = parseDDMMYYYY(String(d.nextUpdate));
+    if (!nDate || isNaN(nDate.getTime())) return false;
+    nDate.setHours(0,0,0,0);
+    return nDate < today;
+  });
+
+  currentData = filtered;
+  renderTable(filtered);
+  document.getElementById('caseTable').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 // ─── DELIVERY MODAL ────────────────────────────
 function openDeliveryModal() {
@@ -1071,9 +1103,20 @@ function renderTable(data) {
         <td>${row.incOwner || '—'}</td>
         <td class="${deliveryClass}">${deliveryDisplay}</td>
         <td class="${nextUpdateClass}">
-          ${row.nextUpdate ? (parseDDMMYYYY(row.nextUpdate)?.toLocaleDateString('en-IN') || '—') : '—'}
-        </td>
-        <td>${promiseCell}</td>
+  ${row.nextUpdate ? (parseDDMMYYYY(row.nextUpdate)?.toLocaleDateString('en-IN') || '—') : '—'}
+</td>
+<td>${(() => {
+  if (!row.emailLastSent) return '<span style="color:var(--danger);font-family:var(--mono);font-size:10px;">NEVER</span>';
+  const d = new Date(row.emailLastSent);
+  if (isNaN(d.getTime())) return '—';
+  const today = new Date(); today.setHours(0,0,0,0); d.setHours(0,0,0,0);
+  const diff = Math.floor((today - d) / 86400000);
+  const label = d.toLocaleDateString('en-IN');
+  if (diff > 3) return `<span style="color:var(--danger);font-family:var(--mono);font-size:10px;">${label} <em>(${diff}d ago)</em></span>`;
+  if (diff > 1) return `<span style="color:var(--warning);font-family:var(--mono);font-size:10px;">${label}</span>`;
+  return `<span style="color:var(--success);font-family:var(--mono);font-size:10px;">${label}</span>`;
+})()} </td>
+<td>${promiseCell}</td>
         <td><button class="open-btn" onclick="openDrawer('${caseNum}')">OPEN ›</button></td>
       </tr>
     `;
@@ -1114,11 +1157,10 @@ function openDrawer(caseNum) {
     </div>
 
     <div class="lc-meta">
-      👤 ${caseData.modifiedBy || '—'}
-      <span style="margin-left:12px">
-        📅 ${caseData.modifiedDate || '—'}
-      </span>
-    </div>
+  👤 ${caseData.modifiedBy || '—'}
+  <span style="margin-left:12px">📅 ${caseData.modifiedDate || '—'}</span>
+  <span style="margin-left:12px">📧 Last email: ${caseData.emailLastSent ? new Date(caseData.emailLastSent).toLocaleDateString('en-IN') : '<span style="color:var(--danger)">Never sent</span>'}</span>
+</div>
   </div>
 `;
 document.getElementById('drawerMeta').insertAdjacentHTML(
