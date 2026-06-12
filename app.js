@@ -134,36 +134,109 @@ setInterval(updateProdWindow, 60000);
 document.getElementById('upload').addEventListener('change', e => {
   const file = e.target.files[0];
   if (!file) return;
+
+  // ── Reset input so same file can be re-uploaded
+  e.target.value = '';
+
   const reader = new FileReader();
-  reader.onload = ev => {
-    const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' });
-    const sheet = wb.Sheets[wb.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-    const cleaned = extractTable(rows);
-    store.set('cases', cleaned);
-    processData(cleaned);
-    showBriefing();
+
+  reader.onerror = () => {
+    alert('Failed to read file. Please try again.');
   };
+
+  reader.onload = ev => {
+    try {
+      const wb = XLSX.read(new Uint8Array(ev.target.result), {
+        type: 'array',
+        cellDates: true,      // ✅ parse dates properly
+        dateNF: 'dd/mm/yyyy', // ✅ consistent date format
+        raw: false            // ✅ get formatted strings not raw numbers
+      });
+
+      // ── Try first sheet, or find sheet with case data
+      let sheetName = wb.SheetNames[0];
+
+      // If multiple sheets, try to find one with 'case' in the name
+      if (wb.SheetNames.length > 1) {
+        const caseSheet = wb.SheetNames.find(n => n.toLowerCase().includes('case'));
+        if (caseSheet) sheetName = caseSheet;
+      }
+
+      const sheet = wb.Sheets[sheetName];
+      const rows  = XLSX.utils.sheet_to_json(sheet, {
+        header: 1,
+        defval: '',    // ✅ empty string instead of undefined for missing cells
+        blankrows: false
+      });
+
+      if (!rows || rows.length === 0) {
+        alert('Sheet appears to be empty.');
+        return;
+      }
+
+      const cleaned = extractTable(rows);
+
+      if (!cleaned.length) {
+        alert(`No valid cases found in sheet "${sheetName}". Check that your file has a "Case Number" column.`);
+        return;
+      }
+
+      store.set('cases', cleaned);
+      processData(cleaned);
+      showBriefing();
+
+    } catch (err) {
+      console.error('Excel parse error:', err);
+      alert('Failed to parse Excel file: ' + err.message);
+    }
+  };
+
   reader.readAsArrayBuffer(file);
 });
 
 function extractTable(rows) {
-  let start = rows.findIndex(r => r?.join(' ').toLowerCase().includes('case number'));
-  if (start === -1) return [];
-  const headers = rows[start];
-  return rows
+  // ── Find header row: look for row containing 'case number' (case-insensitive)
+  let start = -1;
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row) continue;
+    const joined = row.map(c => String(c || '').toLowerCase()).join(' ');
+    if (joined.includes('case number')) {
+      start = i;
+      break;
+    }
+  }
+
+  if (start === -1) {
+    alert('Could not find header row. Make sure your Excel has a "Case Number" column.');
+    return [];
+  }
+
+  // ── Clean headers: trim spaces, normalize
+  const rawHeaders = rows[start];
+  const headers = rawHeaders.map(h => String(h || '').trim());
+
+  // ── Build rows
+  const data = rows
     .slice(start + 1)
     .map(r => {
+      if (!r || r.every(cell => cell === null || cell === undefined || String(cell).trim() === '')) return null;
       const obj = {};
-      headers.forEach((h, i) => obj[h] = r[i]);
+      headers.forEach((h, i) => {
+        obj[h] = (r[i] !== undefined && r[i] !== null) ? r[i] : '';
+      });
       return obj;
     })
     .filter(r => {
+      if (!r) return false;
+      // Accept rows where Case Number starts with 00 or is a number
       const caseNum = String(r['Case Number'] || '').trim();
-      return caseNum !== '' && caseNum.toLowerCase() !== 'total' && !isNaN(caseNum);
+      return caseNum !== '' && caseNum.toLowerCase() !== 'total';
     });
-}
 
+  console.log(`✅ Loaded ${data.length} rows from row index ${start}`);
+  return data;
+}
 // ─── DATE HELPERS ──────────────────────────────
 function parseDDMMYYYY(dateStr) {
   if (!dateStr) return null;
@@ -188,7 +261,7 @@ function parseDeliveryDate(raw) {
 // ─── PROCESS DATA ──────────────────────────────
 function processData(data) {
   data.forEach(d => {
-    d.owner        = d['Case Owner: Full Name'] || 'Unknown';
+    d.owner        = d['Case Owner: Full Name'] ||d['Case Owner']|| 'Unknown';
     d.pendingWith  = d['Cases pending with'] || 'Unknown';
     d.status       = d['Status'] || 'Pending';
     d.inc          = d['Related Issue: Incident Number'] || '';
@@ -200,12 +273,13 @@ function processData(data) {
     d.latestComment = d['Latest Comments'] || '';
     d.modifiedBy    = d['Latest Comments Modified By'] || '';
     d.modifiedDate  = d['Latest Comments Modified Date'] || '';
-    d.emailLastSent = d['Email Last Sent Date and Time'] || null;
+    d.emailLastSent = d['Email Last Sent Date and Time'] || d['Client Email Last Sent Date and Time'] ||null;
 
-    const fullAccount = d['Account Name: Account Name'] || 'Unknown';
+    const rawAccount = d['Account Name: Account Name'] || d['Account Name'] || d['Account'] || 'Unknown';
+    const fullAccount = String(rawAccount || '').trim() || 'Unknown';
     d.account = fullAccount.split(' ')[0];
 
-    const ageRaw = d['Case Age(in number)'] || d['Case Age(in number) '];
+    const ageRaw = d['Case Age(in number)'] || d['Case Age(in number) '] || d['Age'] || null;
     let age = parseInt(ageRaw);
     if (isNaN(age)) age = null;
     d.age = age;
@@ -498,16 +572,76 @@ function renderDeliveryAlertBanner() {
   `;
 }
 // ─── EMAIL LAST SENT ALERT BANNER ──────────────
+
+
+function parseDate(dateStr) {
+  if (!dateStr) return null;
+
+  // Excel numeric date — correct epoch
+  if (typeof dateStr === 'number') {
+    // ✅ Excel's epoch is Dec 30 1899, and has a leap year bug for 1900
+    const date = new Date(Date.UTC(1899, 11, 30) + dateStr * 86400000);
+    return isNaN(date.getTime()) ? null : date;
+  }
+
+  if (dateStr instanceof Date) {
+    return isNaN(dateStr.getTime()) ? null : dateStr;
+  }
+
+  if (typeof dateStr === 'string') {
+    const str = dateStr.trim();
+    if (!str) return null;
+
+    if (str.includes('/')) {
+      const parts = str.split('/');
+      if (parts.length === 3) {
+        let d, m, y;
+        if (parts[0].length === 4) {
+          [y, m, d] = parts; // YYYY/MM/DD
+        } else {
+          [d, m, y] = parts; // DD/MM/YYYY
+          if (String(y).length === 2) y = 2000 + parseInt(y);
+        }
+        const parsed = new Date(parseInt(y), parseInt(m) - 1, parseInt(d));
+        return isNaN(parsed.getTime()) ? null : parsed;
+      }
+    }
+
+    if (str.includes('-')) {
+      const parts = str.split('-');
+      if (parts.length === 3) {
+        let d, m, y;
+        if (parts[0].length === 4) {
+          [y, m, d] = parts; // YYYY-MM-DD
+        } else {
+          [d, m, y] = parts; // DD-MM-YYYY
+        }
+        const parsed = new Date(parseInt(y), parseInt(m) - 1, parseInt(d));
+        return isNaN(parsed.getTime()) ? null : parsed;
+      }
+    }
+
+    const fallback = new Date(dateStr);
+    return isNaN(fallback.getTime()) ? null : fallback;
+  }
+
+  return null;
+}
+
+
 function renderCommentAlertBanner() {
-  const today = new Date(); today.setHours(0,0,0,0);
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
 
   const staleCases = allData.filter(d => {
     if (d.status === 'Closed') return false;
-    if (!d.emailLastSent) return true; // never emailed = always stale
-    const sentDate = new Date(d.emailLastSent);
-    if (isNaN(sentDate.getTime())) return true;
-    sentDate.setHours(0,0,0,0);
-    const diff = Math.floor((today - sentDate) / 86400000);
+    if (!d.emailLastSent) return true;
+
+    const sentDate = parseDate(d.emailLastSent);
+    if (!sentDate || isNaN(sentDate.getTime())) return true;
+
+    sentDate.setHours(0, 0, 0, 0);
+    const diff = Math.floor((now - sentDate) / 86400000);
     return diff > 3;
   });
 
@@ -848,6 +982,8 @@ function renderFilters() {
   createDropdown('statusFilter',  'status');
   createDropdown('pendingFilter', 'pendingWith');
   createDropdown('bucketFilter',  'bucket');
+  createDropdown('INCFilter',  'incOwner');
+
 }
 
 function createDropdown(id, key) {
@@ -868,7 +1004,8 @@ function applyFilters() {
     owner:       document.getElementById('ownerFilter').value,
     status:      document.getElementById('statusFilter').value,
     pendingWith: document.getElementById('pendingFilter').value,
-    bucket:      document.getElementById('bucketFilter').value
+    bucket:      document.getElementById('bucketFilter').value,
+    incOwner:    document.getElementById('INCFilter').value,
   };
   const promiseF = document.getElementById('promiseFilter').value;
 
@@ -892,7 +1029,7 @@ function applyFilters() {
 }
 
 function resetFilters() {
-  ['accountFilter','ownerFilter','statusFilter','pendingFilter','bucketFilter','promiseFilter']
+  ['accountFilter','ownerFilter','statusFilter','pendingFilter','bucketFilter','promiseFilter','INCFilter']
     .forEach(id => document.getElementById(id).value = '');
   currentData = allData;
   renderTable(allData);

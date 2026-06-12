@@ -378,7 +378,7 @@ select option { background: var(--surface2); }
 .table-count { font-family: var(--mono); font-size: 10px; color: var(--text-dim); }
 
 /* TABLE */
-.table-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid var(--border); }
+.table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid var(--border); }
 table { width: 100%; border-collapse: collapse; min-width: 1000px; }
 thead { background: var(--surface2); }
 th {

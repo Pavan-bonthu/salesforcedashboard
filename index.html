@@ -183,10 +183,17 @@
       <label>PENDING WITH</label>
       <select id="pendingFilter"></select>
     </div>
+
     <div class="filter-group">
       <label>AGE BUCKET</label>
       <select id="bucketFilter"></select>
     </div>
+
+    <div class="filter-group">
+      <label>INC OWNER</label>
+      <select id="INCFilter"></select>
+    </div>  
+
     <div class="filter-group">
       <label>PROMISE</label>
       <select id="promiseFilter" onchange="applyFilters()">
@@ -223,7 +230,7 @@
           <th>INC OWNER</th>
           <th>Delivery Date</th>
           <th>Next Update</th>
-          <th>Last Update</th>
+          <!-- <th>Last Update</th> -->
           <th>PROMISE</th>
           <th>ACTIONS</th>
         </tr>
