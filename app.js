@@ -267,6 +267,7 @@ function processData(data) {
     d.inc          = d['Related Issue: Incident Number'] || '';
     d.Server       = d['Server (UAT/PROD)'] || 'Unknown';
     d.deliveryDate = d['Actual Delivery Date'] || null;
+    d.jirastatus = d['JIRA Ticket Status'] || '';
     d.incAge       = d['INC Age'] || d['Incident Age'] || null;
     d.incOwner     = d['INC Owner'] || d['Incident owner'] || '—';
     d.nextUpdate   = d['Next Update'] || d['Next Update Date'] || null;
@@ -544,6 +545,7 @@ function renderDeliveryAlertBanner() {
 
   allData.forEach(d => {
     if (!d.deliveryDate || String(d.deliveryDate).trim() === '' || d.status === 'Closed') return;
+    if (d.jirastatus && String(d.jirastatus).toLowerCase() === 'Released') return; // ignore if JIRA already done
     const dDate = parseDeliveryDate(d.deliveryDate);
     if (!dDate || isNaN(dDate.getTime())) return;
     dDate.setHours(0, 0, 0, 0);
@@ -866,6 +868,7 @@ function filterByDeliveryAlert() {
   const today = new Date(); today.setHours(0, 0, 0, 0);
 
   const filtered = allData.filter(d => {
+    if (d.jirastatus && String(d.jirastatus).toLowerCase() === 'Released') return false; // ignore if JIRA already done
     if (!d.deliveryDate || String(d.deliveryDate).trim() === '' || d.status === 'Closed') return false;
     const dDate = parseDeliveryDate(d.deliveryDate);
     if (!dDate || isNaN(dDate.getTime())) return false;
