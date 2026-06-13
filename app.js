@@ -261,6 +261,9 @@ function parseDeliveryDate(raw) {
 // ─── PROCESS DATA ──────────────────────────────
 function processData(data) {
   data.forEach(d => {
+    allData = data;
+    window.allData = allData; // for debugging
+    console.log ("Loaded Data:", allData);
     d.owner        = d['Case Owner: Full Name'] ||d['Case Owner']|| 'Unknown';
     d.pendingWith  = d['Cases pending with'] || 'Unknown';
     d.status       = d['Status'] || 'Pending';
@@ -272,7 +275,7 @@ function processData(data) {
     d.incOwner     = d['INC Owner'] || d['Incident owner'] || '—';
     d.nextUpdate   = d['Next Update'] || d['Next Update Date'] || null;
     d.latestComment = d['Latest Comments'] || '';
-    d.modifiedBy    = d['Latest Comments Modified By'] || '';
+    d.modifiedBy    = d['Latest Comments Modified By: Full Name'] || '';
     d.modifiedDate  = d['Latest Comments Modified Date'] || '';
     d.emailLastSent = d['Email Last Sent Date and Time'] || d['Client Email Last Sent Date and Time'] ||null;
 
@@ -544,8 +547,10 @@ function renderDeliveryAlertBanner() {
   const overdue = [], dueToday = [];
 
   allData.forEach(d => {
+
+    if (d.jirastatus && String(d.jirastatus).trim().toLowerCase() === 'released') return; // ignore if JIRA done
     if (!d.deliveryDate || String(d.deliveryDate).trim() === '' || d.status === 'Closed') return;
-    if (d.jirastatus && String(d.jirastatus).toLowerCase() === 'Released') return; // ignore if JIRA already done
+   // ignore if JIRA already done
     const dDate = parseDeliveryDate(d.deliveryDate);
     if (!dDate || isNaN(dDate.getTime())) return;
     dDate.setHours(0, 0, 0, 0);
@@ -672,7 +677,7 @@ function filterOldCommentCases() {
   const filtered = allData.filter(d => {
     if (d.status === 'Closed') return false;
     if (!d.emailLastSent) return true;
-    const sentDate = new Date(d.emailLastSent);
+    const sentDate = parseDate(d.emailLastSent);
     if (isNaN(sentDate.getTime())) return true;
     sentDate.setHours(0,0,0,0);
     const diff = Math.floor((today - sentDate) / 86400000);
@@ -868,8 +873,15 @@ function filterByDeliveryAlert() {
   const today = new Date(); today.setHours(0, 0, 0, 0);
 
   const filtered = allData.filter(d => {
-    if (d.jirastatus && String(d.jirastatus).toLowerCase() === 'Released') return false; // ignore if JIRA already done
-    if (!d.deliveryDate || String(d.deliveryDate).trim() === '' || d.status === 'Closed') return false;
+    if (d.jirastatus && String(d.jirastatus).trim().toLowerCase() === 'released') 
+      {
+        return false;
+       } // ignore if JIRA already done
+    if (!d.deliveryDate || String(d.deliveryDate).trim() === '' || d.status === 'Closed')
+      {
+
+       return false;
+      }
     const dDate = parseDeliveryDate(d.deliveryDate);
     if (!dDate || isNaN(dDate.getTime())) return false;
     dDate.setHours(0, 0, 0, 0);
@@ -1247,8 +1259,8 @@ function renderTable(data) {
 </td>
 <td>${(() => {
   if (!row.emailLastSent) return '<span style="color:var(--danger);font-family:var(--mono);font-size:10px;">NEVER</span>';
-  const d = new Date(row.emailLastSent);
-  if (isNaN(d.getTime())) return '—';
+  const d =  parseDate(row.emailLastSent);
+  if (!d ||isNaN(d.getTime())) return '—';
   const today = new Date(); today.setHours(0,0,0,0); d.setHours(0,0,0,0);
   const diff = Math.floor((today - d) / 86400000);
   const label = d.toLocaleDateString('en-IN');
@@ -1299,7 +1311,7 @@ function openDrawer(caseNum) {
     <div class="lc-meta">
   👤 ${caseData.modifiedBy || '—'}
   <span style="margin-left:12px">📅 ${caseData.modifiedDate || '—'}</span>
-  <span style="margin-left:12px">📧 Last email: ${caseData.emailLastSent ? new Date(caseData.emailLastSent).toLocaleDateString('en-IN') : '<span style="color:var(--danger)">Never sent</span>'}</span>
+  <span style="margin-left:12px">📧 Last email: ${caseData.emailLastSent ? (parseDate(caseData.emailLastSent) || new Date()).toLocaleDateString('en-IN') : '<span style="color:var(--danger)">Never sent</span>'}</span>
 </div>
   </div>
 `;
