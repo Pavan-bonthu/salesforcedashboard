@@ -273,6 +273,7 @@ function processData(data) {
     d.jirastatus = d['JIRA Ticket Status'] || '';
     d.incAge       = d['INC Age'] || d['Incident Age'] || null;
     d.incOwner     = d['INC Owner'] || d['Incident owner'] || '—';
+    d.incOwnerQueue = d['INC Owner Queue'] || d['Incident Owner Queue'] || '—';
     d.nextUpdate   = d['Next Update'] || d['Next Update Date'] || null;
     d.latestComment = d['Latest Comments'] || '';
     d.modifiedBy    = d['Latest Comments Modified By: Full Name'] || '';
@@ -998,6 +999,7 @@ function renderFilters() {
   createDropdown('pendingFilter', 'pendingWith');
   createDropdown('bucketFilter',  'bucket');
   createDropdown('INCFilter',  'incOwner');
+  createDropdown('INCFilterqueue',  'incOwnerQueue');
 
 }
 
@@ -1021,6 +1023,7 @@ function applyFilters() {
     pendingWith: document.getElementById('pendingFilter').value,
     bucket:      document.getElementById('bucketFilter').value,
     incOwner:    document.getElementById('INCFilter').value,
+    incOwnerQueue: document.getElementById('INCFilterqueue').value
   };
   const promiseF = document.getElementById('promiseFilter').value;
 
@@ -1044,7 +1047,7 @@ function applyFilters() {
 }
 
 function resetFilters() {
-  ['accountFilter','ownerFilter','statusFilter','pendingFilter','bucketFilter','promiseFilter','INCFilter']
+  ['accountFilter','ownerFilter','statusFilter','pendingFilter','bucketFilter','promiseFilter','INCFilter' ,'INCFilterqueue']
     .forEach(id => document.getElementById(id).value = '');
   currentData = allData;
   renderTable(allData);
