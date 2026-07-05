@@ -352,9 +352,9 @@ const CHART_COLORS = [
   '#f59e0b','#ef4444','#ec4899','#14b8a6','#a78bfa'
 ];
 
-function renderCharts() {
+function renderCharts(data= allData) {
   const acc = {};
-  allData.forEach(d => acc[d.account] = (acc[d.account] || 0) + 1);
+  data.forEach(d => acc[d.account] = (acc[d.account] || 0) + 1);
   const aL = Object.keys(acc), aV = Object.values(acc);
 
   if (donutChart) donutChart.destroy();
@@ -370,7 +370,7 @@ function renderCharts() {
 
   const bucketOrder = ['1-10', '10-20', '20-30', '30+', 'Unknown'];
   const bkt = {};
-  allData.forEach(d => bkt[d.bucket] = (bkt[d.bucket] || 0) + 1);
+  data.forEach(d => bkt[d.bucket] = (bkt[d.bucket] || 0) + 1);
   const bL = bucketOrder.filter(b => bkt[b]);
   const bV = bL.map(b => bkt[b]);
   const barColors = bL.map(b =>
@@ -393,7 +393,7 @@ function renderCharts() {
   });
 
   const pwTotal = {}, pwDelivery = {};
-  allData.filter(d => d.status !== 'Closed').forEach(d => {
+  data.filter(d => d.status !== 'Closed').forEach(d => {
     const key = d.pendingWith || 'Unknown';
     pwTotal[key] = (pwTotal[key] || 0) + 1;
     if (key === 'Developers' && d.deliveryDate && String(d.deliveryDate).trim() !== '') {
@@ -448,7 +448,7 @@ function renderCharts() {
   });
 
   const ser = {};
-  allData.forEach(d => {
+  data.forEach(d => {
     const key = String(d.Server || 'Unknown').trim().toUpperCase();
     ser[key] = (ser[key] || 0) + 1;
   });
@@ -1005,9 +1005,12 @@ function renderFilters() {
 
 function createDropdown(id, key) {
   const vals = [...new Set(allData.map(d => d[key]).filter(Boolean))].sort();
-  const sel  = document.getElementById(id);
-  sel.innerHTML = `<option value="">All</option>` + vals.map(v => `<option value="${v}">${v}</option>`).join('');
-  sel.onchange  = applyFilters;
+  /*const sel  = document.getElementById(id);
+  sel.innerHTML =vals.map(v => `<option value="${v}">${v}</option>`).join('');
+  sel.addEventListener('change', applyFilters);*/
+
+  const container = document.getElementById(id);
+  container.innerHTML = vals.map (v => `<label class = "filter-group"><input type = "checkbox" value = "${v}" >${v}</label>`).join('');
 }
 
 function quickFilter(filterId, value) {
@@ -1042,16 +1045,19 @@ function applyFilters() {
   }
 
   currentData = filtered;
+  renderCharts(filtered);
   renderTable(filtered);
+  resetFilters(filtered);
   renderWatchlist();
 }
 
-function resetFilters() {
+function resetFilters(data = allData) {
   ['accountFilter','ownerFilter','statusFilter','pendingFilter','bucketFilter','promiseFilter','INCFilter' ,'INCFilterqueue']
     .forEach(id => document.getElementById(id).value = '');
   currentData = allData;
   renderTable(allData);
   renderWatchlist();
+  renderCharts(data);
 }
 
 // ─── WATCHLIST ─────────────────────────────────
