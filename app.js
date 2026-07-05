@@ -1003,33 +1003,76 @@ function renderFilters() {
 
 }
 
+const choiceInstances = {};
 function createDropdown(id, key) {
   const vals = [...new Set(allData.map(d => d[key]).filter(Boolean))].sort();
-  /*const sel  = document.getElementById(id);
-  sel.innerHTML =vals.map(v => `<option value="${v}">${v}</option>`).join('');
-  sel.addEventListener('change', applyFilters);*/
-
-  const container = document.getElementById(id);
-  container.innerHTML = vals.map (v => `<label class = "filter-group"><input type = "checkbox" value = "${v}" >${v}</label>`).join('');
+  const sel  = document.getElementById(id);
+  sel.innerHTML = "";
+  vals.forEach(v => {
+    sel.innerHTML += `<option value="${v}">${v}</option>`;
+  });
+ 
+  if (choiceInstances[id]) {
+    choiceInstances[id].destroy();
+  }
+  choiceInstances[id] = new Choices(sel, {
+    searchEnabled: true,
+    shouldSort: false,
+    removeItemButton: true,
+    placeholder: true,
+    placeholderValue: 'All',
+    searchPlaceholderValue: 'Search...',
+    itemSelectText: '',
+  });
+  sel.addEventListener('change', applyFilters);
 }
-
 function quickFilter(filterId, value) {
   document.getElementById(filterId).value = value;
   applyFilters();
 }
 
+function getSelectedValues(id) {
+
+    return [...document.getElementById(id).selectedOptions]
+        .map(option => option.value);
+
+}
+
 function applyFilters() {
   const f = {
-    account:     document.getElementById('accountFilter').value,
-    owner:       document.getElementById('ownerFilter').value,
-    status:      document.getElementById('statusFilter').value,
-    pendingWith: document.getElementById('pendingFilter').value,
-    bucket:      document.getElementById('bucketFilter').value,
-    incOwner:    document.getElementById('INCFilter').value,
-    incOwnerQueue: document.getElementById('INCFilterqueue').value
+    account:     document.getSelectedValues('accountFilter').value,
+    owner:       document.getSelectedValues('ownerFilter').value,
+    status:      document.getSelectedValues('statusFilter').value,
+    pendingWith: document.getSelectedValues('pendingFilter').value,
+    bucket:      document.getSelectedValues('bucketFilter').value,
+    incOwner:    document.getSelectedValues('INCFilter').value,
+    incOwnerQueue: document.getSelectedValues('INCFilterqueue').value
   };
-  const promiseF = document.getElementById('promiseFilter').value;
 
+  if (account.length && !account.includes(row.account))
+    return false;
+
+  if (owner.length && !owner.includes(row.owner))
+    return false;
+
+  if (status.length && !status.includes(row.status))
+    return false;
+
+  if (pendingWith.length && !pendingWith.includes(row.pendingWith))
+    return false;
+
+  if (bucket.length && !bucket.includes(row.bucket))
+    return false;
+
+  if (incOwner.length && !incOwner.include(row.incOwner))
+    return false;
+
+  if (incOwnerQueue.length && !incOwnerQueue.include(row.incOwnerQueue))
+    return false;
+
+
+  const promiseF = document.getElementById('promiseFilter').value;
+   
   let filtered = allData;
   Object.keys(f).forEach(k => { if (f[k]) filtered = filtered.filter(d => d[k] === f[k]); });
 

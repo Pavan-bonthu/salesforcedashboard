@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css">
 <meta charset="UTF-8"/>
 <title>CaseOps — Command Center</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -9,7 +10,7 @@
 <link rel="stylesheet" href="style.css"/>
 </head>
 <body>
-
+<script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>
 <!-- BOOT SCREEN -->
 <div id="boot">
   <div class="boot-inner">
@@ -148,34 +149,34 @@
   <div class="filters-bar">
     <div class="filter-group">
       <label>ACCOUNT</label>
-      <select id="accountFilter"></select>
+      <select id="accountFilter" multiple></select>
     </div>
     <div class="filter-group">
       <label>OWNER</label>
-      <select id="ownerFilter"></select>
+      <select id="ownerFilter"multiple></select>
     </div>
     <div class="filter-group">
       <label>STATUS</label>
-      <select id="statusFilter"></select>
+      <select id="statusFilter"multiple></select>
     </div>
     <div class="filter-group">
       <label>PENDING WITH</label>
-      <select id="pendingFilter"></select>
+      <select id="pendingFilter"multiple></select>
     </div>
 
     <div class="filter-group">
       <label>AGE BUCKET</label>
-      <select id="bucketFilter"></select>
+      <select id="bucketFilter"multiple></select>
     </div>
 
     <div class="filter-group">
       <label>INC OWNER</label>
-      <select id="INCFilter"></select>
+      <select id="INCFilter"multiple></select>
     </div> 
     
     <div class="filter-group">
       <label>INC OWNER Queue</label>
-      <select id="INCFilterqueue"></select>
+      <select id="INCFilterqueue"multiple></select>
     </div>
 
     <div class="filter-group">
