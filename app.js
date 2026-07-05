@@ -991,6 +991,7 @@ function closeBriefing() {
   store.set('lastBriefing', new Date().setHours(0,0,0,0).toString());
 }
 
+/*
 // ─── FILTERS ───────────────────────────────────
 function renderFilters() {
   createDropdown('accountFilter', 'account');
@@ -1092,9 +1093,11 @@ function applyFilters() {
   renderTable(filtered);
   resetFilters(filtered);
   renderWatchlist();
-}
+}*/
 
-function resetFilters(data = allData) {
+
+
+/*function resetFilters(data = allData) {
   ['accountFilter','ownerFilter','statusFilter','pendingFilter','bucketFilter','promiseFilter','INCFilter' ,'INCFilterqueue']
     .forEach(id => document.getElementById(id).value = '');
   currentData = allData;
@@ -1102,6 +1105,239 @@ function resetFilters(data = allData) {
   renderWatchlist();
   renderCharts(data);
 }
+*/
+
+
+
+
+// state per filter id: which values are checked
+const xfilterState = {};
+// maps filter id -> data field key (e.g. accountFilter -> 'account')
+const FILTER_KEYS  = {};
+
+// ─── FILTERS: build all excel-style dropdowns ──
+function renderFilters() {
+  setupExcelFilter('accountFilter',   'account');
+  setupExcelFilter('ownerFilter',     'owner');
+  setupExcelFilter('statusFilter',    'status');
+  setupExcelFilter('pendingFilter',   'pendingWith');
+  setupExcelFilter('bucketFilter',    'bucket');
+  setupExcelFilter('INCFilter',       'incOwner');
+  setupExcelFilter('INCFilterqueue',  'incOwnerQueue');
+}
+
+function setupExcelFilter(id, key) {
+  const sel = document.getElementById(id);
+  if (!sel) return;
+
+  sel.style.display = 'none'; // hide the original <select multiple>
+  FILTER_KEYS[id] = key;
+  xfilterState[id] = new Set(); // reset selection whenever data reloads
+
+  // remove old widget if this ran before (e.g. re-uploaded file)
+  const old = sel.parentNode.querySelector(`.xfilter[data-for="${id}"]`);
+  if (old) old.remove();
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'xfilter';
+  wrapper.dataset.for = id;
+  wrapper.innerHTML = `
+    <button type="button" class="xfilter-btn" data-id="${id}">
+      <span class="btn-label">All</span>
+      <span class="caret">▾</span>
+    </button>
+    <div class="xfilter-panel" data-id="${id}">
+      <div class="xfilter-search"><input type="text" placeholder="Search..." /></div>
+      <div class="xfilter-actions">
+        <button type="button" data-act="all">Select all</button>
+        <button type="button" data-act="clear">Clear</button>
+      </div>
+      <div class="xfilter-list"></div>
+      <div class="xfilter-footer">
+        <button type="button" class="cancel">Cancel</button>
+        <button type="button" class="apply">Apply</button>
+      </div>
+    </div>
+  `;
+  sel.insertAdjacentElement('afterend', wrapper);
+
+  // force-hide immediately, regardless of whether the CSS loaded correctly
+  wrapper.querySelector('.xfilter-panel').style.display = 'none';
+
+  wireExcelFilter(id, key, wrapper);
+}
+
+// values still available for this filter, given what's checked in the OTHER filters
+function getAvailableValues(id, key) {
+  const otherIds = Object.keys(xfilterState).filter(k => k !== id);
+  const scoped = allData.filter(row =>
+    otherIds.every(oid => {
+      const s = xfilterState[oid];
+      if (!s || s.size === 0) return true;
+      return s.has(row[FILTER_KEYS[oid]]);
+    })
+  );
+  return [...new Set(scoped.map(r => r[key]).filter(Boolean))].sort();
+}
+
+function wireExcelFilter(id, key, root) {
+  const btn    = root.querySelector('.xfilter-btn');
+  const panel  = root.querySelector('.xfilter-panel');
+  const list   = root.querySelector('.xfilter-list');
+  const search = root.querySelector('.xfilter-search input');
+
+  panel.addEventListener('click', e => e.stopPropagation());
+
+  let draft = new Set(xfilterState[id]);
+
+  function renderList(filterText = '') {
+    const values = getAvailableValues(id, key);
+    const q = filterText.trim().toLowerCase();
+    const shown = q ? values.filter(v => String(v).toLowerCase().includes(q)) : values;
+
+    list.innerHTML = '';
+    if (!shown.length) {
+      list.innerHTML = `<div class="xfilter-empty">No matches</div>`;
+      return;
+    }
+    shown.forEach(val => {
+      const count = allData.filter(r => r[key] === val).length;
+      const item = document.createElement('label');
+      item.className = 'xfilter-item';
+      item.innerHTML = `
+        <input type="checkbox" value="${val}" ${draft.has(val) ? 'checked' : ''}/>
+        <span class="lbl">${val}</span>
+        <span class="n">${count}</span>
+      `;
+      item.querySelector('input').addEventListener('change', e => {
+        e.target.checked ? draft.add(val) : draft.delete(val);
+      });
+      list.appendChild(item);
+    });
+  }
+
+  function openPanel() {
+    document.querySelectorAll('.xfilter-panel.open').forEach(p => {
+      if (p !== panel) { p.classList.remove('open'); p.style.display = 'none'; }
+    });
+    draft = new Set(xfilterState[id]);
+    search.value = '';
+    renderList();
+    panel.classList.add('open');
+    panel.style.display = 'block';   // <-- forces it open regardless of CSS
+    search.focus();
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.style.display = 'none';    // <-- forces it closed regardless of CSS
+  }
+
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    panel.classList.contains('open') ? closePanel() : openPanel();
+  });
+
+  search.addEventListener('input', () => renderList(search.value));
+
+  panel.querySelector('[data-act="all"]').onclick = () => {
+    getAvailableValues(id, key).forEach(v => draft.add(v));
+    renderList(search.value);
+  };
+  panel.querySelector('[data-act="clear"]').onclick = () => {
+    draft.clear();
+    renderList(search.value);
+  };
+  panel.querySelector('.cancel').onclick = closePanel;
+  panel.querySelector('.apply').onclick = () => {
+    xfilterState[id] = new Set(draft);
+    updateXFilterLabel(id);
+    closePanel();
+    applyFilters();
+  };
+}
+
+function updateXFilterLabel(id) {
+  const btn = document.querySelector(`.xfilter-btn[data-id="${id}"]`);
+  if (!btn) return;
+  const s = xfilterState[id];
+  const label = btn.querySelector('.btn-label');
+  if (!s || s.size === 0) {
+    label.textContent = 'All';
+    btn.classList.remove('active-filter');
+  } else if (s.size === 1) {
+    label.textContent = [...s][0];
+    btn.classList.add('active-filter');
+  } else {
+    label.textContent = `${s.size} selected`;
+    btn.classList.add('active-filter');
+  }
+}
+
+function refreshOpenXFilterPanels() {
+  document.querySelectorAll('.xfilter-panel.open').forEach(p => {
+    p.querySelector('.xfilter-search input').dispatchEvent(new Event('input'));
+  });
+}
+
+document.addEventListener('click', () => {
+  document.querySelectorAll('.xfilter-panel.open').forEach(p => {
+    p.classList.remove('open');
+    p.style.display = 'none';
+  });
+});
+
+function quickFilter(filterId, value) {
+  if (!(filterId in xfilterState)) return;
+  xfilterState[filterId] = new Set([value]);
+  updateXFilterLabel(filterId);
+  applyFilters();
+}
+
+// ─── APPLY FILTERS (same name, correct logic) ──
+function applyFilters() {
+  let filtered = allData.filter(row =>
+    Object.keys(xfilterState).every(id => {
+      const s = xfilterState[id];
+      if (!s || s.size === 0) return true;
+      return s.has(row[FILTER_KEYS[id]]);
+    })
+  );
+
+  const promiseF = document.getElementById('promiseFilter').value;
+  if (promiseF) {
+    filtered = filtered.filter(d => {
+      const ps = getCasePromiseStatus(d['Case Number']);
+      if (promiseF === 'overdue') return ps === 'overdue';
+      if (promiseF === 'today')   return ps === 'today';
+      if (promiseF === 'pending') return !!ps;
+      if (promiseF === 'none')    return !ps;
+      return true;
+    });
+  }
+
+  currentData = filtered;
+  renderCharts(filtered);
+  renderTable(filtered);
+  renderWatchlist();
+  refreshOpenXFilterPanels();
+}
+
+// ─── RESET FILTERS (same name, correct behavior) ──
+function resetFilters(data = allData) {
+  Object.keys(xfilterState).forEach(id => {
+    xfilterState[id].clear();
+    updateXFilterLabel(id);
+  });
+  const promiseEl = document.getElementById('promiseFilter');
+  if (promiseEl) promiseEl.value = '';
+
+  currentData = allData;
+  renderTable(allData);
+  renderWatchlist();
+  renderCharts(allData);
+}
+
+//--end of new  code 
 
 // ─── WATCHLIST ─────────────────────────────────
 function renderWatchlist() {
