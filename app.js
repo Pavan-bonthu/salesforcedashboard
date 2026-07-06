@@ -306,6 +306,7 @@ function processData(data) {
   renderTable(data);
   renderAlertStrip();
   renderDeliveryAlertBanner();
+  renderRLEAlertBanner();
   renderCommentAlertBanner();
   renderNextUpdateAlertBanner();
   updateBellBadge();
@@ -579,6 +580,88 @@ function renderDeliveryAlertBanner() {
     </div>
   `;
 }
+
+
+/*--- Release alert---------
+function renderReleasedAlert() {
+  const today = newDate(); today.setHours(0,0,0,0);
+
+  allData= forEach (d => {
+    if (d.jirastatus && string(d.jirastatus).trim().toLowerCase() === 'released'){
+      released.push(d);
+    }
+  });
+ const bar = document.getElementById("rleAlertBar");
+  if (!bar) return;
+
+  const details = released
+  .map(d => `${d.inc} - ${d.incOwner}`)
+  .join("<br>");
+
+  const total = released.length;
+
+  if (!total) {
+    bar.innerHTML = "";
+    bar.style.display = "none";
+    return;
+  }
+
+  bar.innerHTML = `
+<div class="da-summary" title="${released
+  .map(d => `${d.inc} - ${d.incOwner}`)
+  .join('\n')}">
+    🚀 RLE
+    <span class="da-count-badge">${released.length}</span>
+</div>
+`;
+
+}
+*/
+
+function renderRLEAlertBanner() {
+
+  const released = [];
+
+  allData.forEach(d => {
+
+    // Check if JIRA Status is Released
+    if (
+      d.jirastatus &&
+      String(d.jirastatus).trim().toLowerCase() === "released"
+    ) {
+      released.push(d);
+    }
+
+  });
+
+  const bar = document.getElementById("rleAlertBar");
+  if (!bar) return;
+
+  
+
+  const total = released.length;
+
+  if (!total) {
+    bar.innerHTML = "";
+    bar.style.display = "none";
+    return;
+  }
+
+  const details = released
+  .map(d => `${d.inc} - ${d.incOwner}`)
+  .join("<br>");
+
+  bar.innerHTML = `
+<div class="da-summary" title="${released
+  .map(d => `${d.inc} - ${d.incOwner}`)
+  .join('\n')}">
+    🚀 RLE
+    <span class="da-count-badge">${released.length}</span>
+</div>
+`;
+}
+
+
 // ─── EMAIL LAST SENT ALERT BANNER ──────────────
 
 
