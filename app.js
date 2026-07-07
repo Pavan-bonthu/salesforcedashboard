@@ -625,7 +625,7 @@ function renderReleasedAlert() {
   const released = [];
 
   allData.forEach(d => {
-    if (d.jiraStatus && String(d.jiraStatus).trim().toLowerCase() === 'released') {
+    if (d.jirastatus && String(d.jirastatus).trim().toLowerCase() === 'released') {
       released.push(d);
     }
   });
@@ -653,7 +653,7 @@ function renderReleasedAlert() {
 
 function openReleasedModal() {
   const released = allData.filter(d =>
-    d.jiraStatus && String(d.jiraStatus).trim().toLowerCase() === 'released'
+    d.jirastatus && String(d.jirastatus).trim().toLowerCase() === 'released'
   );
 
   const buildRow = (d) => {
@@ -719,7 +719,7 @@ function closeReleasedModal() {
 
 function filterReleasedCases() {
   const filtered = allData.filter(d =>
-    d.jiraStatus && String(d.jiraStatus).trim().toLowerCase() === 'released'
+    d.jirastatus && String(d.jirastatus).trim().toLowerCase() === 'released'
   );
   currentData = filtered;
   renderTable(filtered);
