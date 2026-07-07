@@ -751,3 +751,55 @@ tr:last-child td { border-bottom: none; }
 .xfilter-footer{display:flex;justify-content:flex-end;gap:8px;padding:8px 10px;border-top:1px solid #2a3a5a;}
 .xfilter-footer button{font-size:11.5px;padding:5px 12px;border-radius:5px;border:1px solid #2a3a5a;background:#1a2740;color:#e6ebf5;cursor:pointer;}
 .xfilter-footer button.apply{background:#2dd4bf;border-color:#2dd4bf;color:#04201d;font-weight:600;}
+/* ── TABLE FIXES ──────────────────────────────── */
+.table-wrap {
+  overflow-x: auto;        /* ✅ horizontal scroll instead of cut off */
+  width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
+#caseTable {
+  width: 100%;
+  min-width: 1400px;       /* ✅ force full width so all columns show */
+  table-layout: fixed;
+}
+
+/* Column widths */
+#caseTable th:nth-child(1)  { width: 40px;  }  /* ★ */
+#caseTable th:nth-child(2)  { width: 110px; }  /* STATUS */
+#caseTable th:nth-child(3)  { width: 100px; }  /* CASE # */
+#caseTable th:nth-child(4)  { width: 80px;  }  /* ACCOUNT */
+#caseTable th:nth-child(5)  { width: 120px; }  /* OWNER */
+#caseTable th:nth-child(6)  { width: 55px;  }  /* AGE */
+#caseTable th:nth-child(7)  { width: 110px; }  /* PENDING WITH */
+#caseTable th:nth-child(8)  { width: 110px; }  /* INC */
+#caseTable th:nth-child(9)  { width: 70px;  }  /* INC AGE */
+#caseTable th:nth-child(10) { width: 110px; }  /* INC OWNER */
+#caseTable th:nth-child(11) { width: 100px; }  /* DELIVERY DATE */
+#caseTable th:nth-child(12) { width: 100px; }  /* NEXT UPDATE */
+#caseTable th:nth-child(13) { width: 120px; }  /* PROMISE */
+#caseTable th:nth-child(14) { width: 70px;  }  /* ACTIONS */
+
+/* Prevent text overflow in cells */
+#caseTable td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── MAIN LAYOUT FIX ─────────────────────────── */
+.main {
+  overflow-x: hidden;      /* ✅ prevent whole page from scrolling sideways */
+  width: 100%;
+}
+
+
+/* If your app wrapper clips content */
+#app {
+  overflow-x: hidden;
+}
+
+.main {
+  padding: 0 16px;
+  box-sizing: border-box;
+}
