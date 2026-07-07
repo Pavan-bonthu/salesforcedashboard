@@ -35,7 +35,7 @@
     <div class="date-display" id="dateDisplay"></div>
   </div>
   <div class="topbar-right">
-    <div id="rleAlertBar" class="release-alert-bar"></div>
+    <div id="rleAlertBar" class="delivery-alert-bar"></div>
     <div id="deliveryAlertBar" class="delivery-alert-bar"></div>
     <div id="commentAlertBar"class="delivery-alert-bar"></div>
     <div class="alert-bell" id="alertBell" onclick="toggleAlertPanel()">
@@ -49,6 +49,18 @@
     <input type="file" id="upload" accept=".xlsx,.xls,.csv" style="display:none"/>
   </div>
 </header>
+
+
+<!-- RELEASED MODAL -->
+<div class="modal-overlay hidden" id="releasedModal">
+  <div class="modal delivery-modal">
+    <div class="modal-header">
+      <span class="modal-title">🚀 RELEASED CASES</span>
+      <button class="close-btn" onclick="closeReleasedModal()">✕</button>
+    </div>
+    <div id="releasedModalContent" class="delivery-modal-content"></div>
+  </div>
+</div>
 
 <!-- ALERT PANEL -->
 <div class="alert-panel" id="alertPanel">
