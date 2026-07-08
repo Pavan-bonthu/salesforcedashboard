@@ -306,7 +306,7 @@ function processData(data) {
   renderTable(data);
   renderAlertStrip();
   renderDeliveryAlertBanner();
-  renderReleasedAlert()
+  renderINCAlertBanner();
   renderCommentAlertBanner();
   renderNextUpdateAlertBanner();
   updateBellBadge();
@@ -617,23 +617,17 @@ function renderReleasedAlert() {
 
 }
 */
+function renderINCAlertBanner() {
+  const incCases = allData.filter(d =>
+    d.inc &&
+    String(d.inc).trim() !== '' &&
+    d.status !== 'Released'
+  );
 
-function renderReleasedAlert() {
-  const today = new Date(); 
-  today.setHours(0, 0, 0, 0);
-
-  const released = [];
-
-  allData.forEach(d => {
-    if (d.jirastatus && String(d.jirastatus).trim().toLowerCase() === 'released') {
-      released.push(d);
-    }
-  });
-
-  const bar = document.getElementById('rleAlertBar');
+  const bar = document.getElementById('incAlertBar');
   if (!bar) return;
 
-  const total = released.length;
+  const total = incCases.length;
 
   if (!total) {
     bar.innerHTML = '';
@@ -643,43 +637,39 @@ function renderReleasedAlert() {
 
   bar.style.display = 'flex';
   bar.innerHTML = `
-    <div class="da-summary" onclick="openReleasedModal()" title="${released.map(d => `${d.inc} - ${d.incOwner}`).join('\n')}">
-      <span>🚀</span>
-      <span>RLE</span>
+    <div class="da-summary" onclick="openINCModal()">
+      <span>🔥</span>
+      <span>INC</span>
       <span class="da-count-badge">${total}</span>
     </div>
   `;
 }
 
-function openReleasedModal() {
-  const released = allData.filter(d =>
-    d.jirastatus && String(d.jirastatus).trim().toLowerCase() === 'released'
+function openINCModal() {
+  const incCases = allData.filter(d =>
+    d.inc &&
+    String(d.inc).trim() !== '' &&
+    d.status !== 'Closed'
   );
 
   const buildRow = (d) => {
-    const status = d.status || '';
-    const sLower = status.toLowerCase();
-    const pillClass = sLower.includes('closed') ? 'pill-closed'
-      : sLower.includes('progress') ? 'pill-open' : 'pill-pending';
-
-    const age = d.age !== null
-      ? `<span class="age-num ${d.age > 30 ? 'age-high' : d.age > 20 ? 'age-med' : 'age-low'}">${d.age}d</span>`
-      : '—';
+    const incAge = parseInt(d.incAge);
+    const incAgeClass = !isNaN(incAge)
+      ? incAge > 30 ? 'age-high' : incAge > 20 ? 'age-med' : 'age-low'
+      : '';
 
     return `
-      <tr class="dm-row" onclick="closeReleasedModal(); setTimeout(() => openDrawer('${d['Case Number']}'), 200)">
-        <td><span class="status-pill ${pillClass}">${status}</span></td>
+      <tr class="dm-row"
+        onclick="closeINCModal(); setTimeout(() => openDrawer('${d['Case Number']}'), 200)">
         <td><span class="case-num">${d['Case Number']}</span></td>
+        <td><span class="inc-badge">${d.inc}</span></td>
+        <td style="white-space:nowrap">${d.incOwner || '—'}</td>
+        <td>${!isNaN(incAge) ? `<span class="age-num ${incAgeClass}">${incAge}d</span>` : '—'}</td>
         <td>${d.account}</td>
         <td style="white-space:nowrap">${d.owner}</td>
-        <td>${age}</td>
-        <td>${d.pendingWith}</td>
-        <td>${d.inc ? `<span class="inc-badge">${d.inc}</span>` : '—'}</td>
-        <td>${d.incOwner || '—'}</td>
-        <td><span style="color:#22c55e;font-family:var(--mono);font-size:11px">🚀 RELEASED</span></td>
         <td>
-          <button class="open-btn" 
-            onclick="event.stopPropagation(); closeReleasedModal(); setTimeout(() => openDrawer('${d['Case Number']}'), 200)">
+          <button class="open-btn"
+            onclick="event.stopPropagation(); closeINCModal(); setTimeout(() => openDrawer('${d['Case Number']}'), 200)">
             OPEN ›
           </button>
         </td>
@@ -688,45 +678,50 @@ function openReleasedModal() {
   };
 
   const html = `
-    <div class="dm-section-label" style="color:#22c55e;border-color:rgba(34,197,94,0.2)">
-      🚀 RELEASED — ${released.length} CASES
+    <div class="dm-section-label" style="color:#f59e0b;border-color:rgba(245,158,11,0.2)">
+      🔥 ACTIVE INC — ${incCases.length} CASES
     </div>
     <div class="table-wrap">
       <table class="dm-table">
-        <thead><tr>
-          <th>STATUS</th><th>CASE #</th><th>ACCOUNT</th><th>OWNER</th>
-          <th>AGE</th><th>PENDING WITH</th><th>INC</th><th>INC OWNER</th>
-          <th>JIRA STATUS</th><th></th>
-        </tr></thead>
-        <tbody>${released.map(d => buildRow(d)).join('')}</tbody>
+        <thead>
+          <tr>
+            <th>CASE #</th>
+            <th>INC NUMBER</th>
+            <th>INC OWNER</th>
+            <th>INC AGE</th>
+            <th>ACCOUNT</th>
+            <th>CASE OWNER</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>${incCases.map(d => buildRow(d)).join('')}</tbody>
       </table>
     </div>
     <div style="padding:20px 0 4px;text-align:right">
-      <button class="modal-cta" style="font-size:11px;padding:8px 20px;background:#22c55e"
-        onclick="closeReleasedModal(); filterReleasedCases()">
-        VIEW ALL ${released.length} CASES IN TABLE ›
+      <button class="modal-cta" style="font-size:11px;padding:8px 20px"
+        onclick="closeINCModal(); filterINCCases()">
+        VIEW ALL ${incCases.length} CASES IN TABLE ›
       </button>
     </div>
   `;
 
-  document.getElementById('releasedModalContent').innerHTML = html;
-  document.getElementById('releasedModal').classList.remove('hidden');
+  document.getElementById('incModalContent').innerHTML = html;
+  document.getElementById('incModal').classList.remove('hidden');
 }
 
-function closeReleasedModal() {
-  document.getElementById('releasedModal').classList.add('hidden');
+function closeINCModal() {
+  document.getElementById('incModal').classList.add('hidden');
 }
 
-function filterReleasedCases() {
+function filterINCCases() {
   const filtered = allData.filter(d =>
-    d.jirastatus && String(d.jirastatus).trim().toLowerCase() === 'released'
+    d.inc && String(d.inc).trim() !== '' && d.status !== 'Closed'
   );
   currentData = filtered;
   renderTable(filtered);
   renderWatchlist();
   document.getElementById('caseTable').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
-
 
 // ─── EMAIL LAST SENT ALERT BANNER ──────────────
 

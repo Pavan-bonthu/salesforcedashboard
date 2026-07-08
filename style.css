@@ -803,3 +803,91 @@ tr:last-child td { border-bottom: none; }
   padding: 0 16px;
   box-sizing: border-box;
 }
+
+
+/* ── DELIVERY MODAL (wide variant for tables) ── */
+.delivery-modal {
+  width: 90vw;
+  max-width: 1200px;   /* overrides base .modal's 560px */
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;         /* header never shrinks/scrolls away */
+}
+
+.modal-title {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.close-btn:hover { color: var(--text); }
+
+.delivery-modal-content {
+  overflow-y: auto;       /* THIS scrolls, not .modal */
+  padding: 16px 20px;
+  flex: 1;
+}
+
+.dm-section-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  padding: 8px 12px;
+  border: 1px solid;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  display: inline-block;
+}
+
+.dm-table {
+  width: 100%;
+  min-width: 900px;       /* forces horizontal scroll, not clipping */
+  border-collapse: collapse;
+}
+
+.dm-table th {
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.dm-table td {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.dm-row { cursor: pointer; }
+.dm-row:hover { background: var(--surface2); }
+
+/* the .table-wrap you already have handles the x-scroll —
+   just make sure it's INSIDE .delivery-modal-content, not around .modal */
+.delivery-modal-content .table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
