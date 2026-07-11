@@ -621,8 +621,11 @@ function renderINCAlertBanner() {
   const incCases = allData.filter(d =>
     d.inc &&
     String(d.inc).trim() !== '' &&
-    d.status !== 'Released'
+    d.jirastatus &&
+    String(d.jirastatus).trim().toLowerCase() === 'released' &&
+    d.status !== 'Closed'
   );
+
 
   const bar = document.getElementById('incAlertBar');
   if (!bar) return;
@@ -649,6 +652,8 @@ function openINCModal() {
   const incCases = allData.filter(d =>
     d.inc &&
     String(d.inc).trim() !== '' &&
+    d.jirastatus &&
+    String(d.jirastatus).trim().toLowerCase() === 'released' &&
     d.status !== 'Closed'
   );
 
@@ -660,16 +665,13 @@ function openINCModal() {
 
     return `
       <tr class="dm-row"
-        onclick="closeINCModal(); setTimeout(() => openDrawer('${d['Case Number']}'), 200)">
-        <td><span class="case-num">${d['Case Number']}</span></td>
+        onclick=closeINCModal();
         <td><span class="inc-badge">${d.inc}</span></td>
         <td style="white-space:nowrap">${d.incOwner || '—'}</td>
-        <td>${!isNaN(incAge) ? `<span class="age-num ${incAgeClass}">${incAge}d</span>` : '—'}</td>
-        <td>${d.account}</td>
-        <td style="white-space:nowrap">${d.owner}</td>
+      
         <td>
           <button class="open-btn"
-            onclick="event.stopPropagation(); closeINCModal(); setTimeout(() => openDrawer('${d['Case Number']}'), 200)">
+            onclick="event.stopPropagation(); closeINCModal();">
             OPEN ›
           </button>
         </td>
@@ -679,19 +681,14 @@ function openINCModal() {
 
   const html = `
     <div class="dm-section-label" style="color:#f59e0b;border-color:rgba(245,158,11,0.2)">
-      🔥 ACTIVE INC — ${incCases.length} CASES
+      🔥 Released INC — ${incCases.length} CASES
     </div>
     <div class="table-wrap">
-      <table class="dm-table">
+      <table class="dm-tables">
         <thead>
           <tr>
-            <th>CASE #</th>
-            <th>INC NUMBER</th>
+            <th>INC</th>
             <th>INC OWNER</th>
-            <th>INC AGE</th>
-            <th>ACCOUNT</th>
-            <th>CASE OWNER</th>
-            <th></th>
           </tr>
         </thead>
         <tbody>${incCases.map(d => buildRow(d)).join('')}</tbody>
@@ -715,7 +712,9 @@ function closeINCModal() {
 
 function filterINCCases() {
   const filtered = allData.filter(d =>
-    d.inc && String(d.inc).trim() !== '' && d.status !== 'Closed'
+    d.inc && String(d.inc).trim() !== '' && 
+    d.jirastatus && String(d.jirastatus).trim().toLowerCase() === 'released' &&
+    d.status !== 'Closed'
   );
   currentData = filtered;
   renderTable(filtered);
