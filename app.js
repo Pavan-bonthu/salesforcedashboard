@@ -640,7 +640,7 @@ function renderINCAlertBanner() {
 
   bar.style.display = 'flex';
   bar.innerHTML = `
-    <div class="da-summary" onclick="openINCModal()">
+    <div class="da-summary" onclick="filterINCCases()">
       <span>🔥</span>
       <span>INC</span>
       <span class="da-count-badge">${total}</span>
@@ -672,47 +672,47 @@ function openINCModal() {
 
 
 
-    return `
-      <tr class="dm-row"
-        onclick="closeINCModal(); setTimeout(() => openDrawer('${d['Case Number']}'), 200)">
-        <td style="white-space:nowrap;color:#a78bfa;font-family:var(--mono);font-size:11px">${incNum || '—'}</td>
-        <td style="white-space:nowrap">${d.incOwner || '—'}</td>
-        <td>${!isNaN(incAge) ? `<span class="age-num ${incAgeClass}">${incAge}d</span>` : '—'}</td>
-        <td>
-          <button class="open-btn"
-            onclick="event.stopPropagation(); closeINCModal(); setTimeout(() => openDrawer('${d['Case Number']}'), 200)">
-            OPEN ›
-          </button>
-        </td>
-      </tr>
-    `;
+   return `
+   <tr class="dm-row"
+       onclick="closeINCModal(); setTimeout(() => openDrawer('${d['Case Number']}'), 200)">
+        <td style="white-space:nowrap;color:#a78bfa;font-family:var(--mono);font-size:11px">${incNum || '—'}</td>
+       <td style="white-space:nowrap">${d.incOwner || '—'}</td>
+       <td>${!isNaN(incAge) ? `<span class="age-num ${incAgeClass}">${incAge}d</span>` : '—'}</td>
+  <td>
+<button class="open-btn"
+ onclick="event.stopPropagation(); closeINCModal(); setTimeout(() => openDrawer('${d['Case Number']}'), 200)">
+OPEN ›
+</button>
+ </td>
+</tr>
+ `;
   };
 
 
 
   const html = `
-    <div class="dm-section-label" style="color:#22c55e;border-color:rgba(34,197,94,0.2);margin-bottom:16px">
-      🚀 RELEASED INC — ${incCases.length} CASES
-    </div>
-    <div class="table-wrap">
-      <table class="dm-table" style="min-width:500px">
-        <thead>
-          <tr>
-            <th style="width:200px">INC NUMBER</th>
-            <th style="width:200px">INC OWNER</th>
-            <th style="width:80px">INC AGE</th>
-            <th style="width:80px"></th>
-          </tr>
-        </thead>
-        <tbody>${incCases.map(d => buildRow(d)).join('')}</tbody>
-      </table>
-    </div>
-    <div style="padding:20px 0 4px;text-align:right">
-      <button class="modal-cta" style="font-size:11px;padding:8px 20px"
-        onclick="closeINCModal(); filterINCCases()">
-        VIEW ALL ${incCases.length} CASES IN TABLE ›
-      </button>
-    </div>
+<div class="dm-section-label" style="color:#22c55e;border-color:rgba(34,197,94,0.2);margin-bottom:16px">
+🚀 RELEASED INC — ${incCases.length} CASES
+  </div>
+ <div class="table-wrap">
+ <table class="dm-table" style="min-width:500px">
+<thead>
+ <tr>
+ <th style="width:200px">INC NUMBER</th>
+ <th style="width:200px">INC OWNER</th>
+ <th style="width:80px">INC AGE</th>
+<th style="width:80px"></th>
+ </tr>
+</thead>
+<tbody>${incCases.map(d => buildRow(d)).join('')}</tbody>
+</table>
+ </div>
+ <div style="padding:20px 0 4px;text-align:right">
+<button class="modal-cta" style="font-size:11px;padding:8px 20px"
+ onclick="closeINCModal(); filterINCCases()">
+VIEW ALL ${incCases.length} CASES IN TABLE ›
+ </button>
+ </div>
   `;
 
 
