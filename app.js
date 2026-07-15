@@ -278,7 +278,8 @@ function processData(data) {
     d.latestComment = d['Latest Comments'] || '';
     d.modifiedBy    = d['Latest Comments Modified By: Full Name'] || '';
     d.modifiedDate  = d['Latest Comments Modified Date'] || '';
-    d.emailLastSent = d['Email Last Sent Date and Time'] || d['Client Email Last Sent Date and Time'] ||null;
+    d.emailLastSent = d['Client Email Last Sent Date and Time'] ||null;
+    d.lastEmailSent = d['Email Last Sent Date and Time'] || null;
 
     const rawAccount = d['Account Name: Account Name'] || d['Account Name'] || d['Account'] || 'Unknown';
     const fullAccount = String(rawAccount || '').trim() || 'Unknown';
@@ -795,7 +796,8 @@ function parseDate(dateStr) {
 }
 
 
-function renderCommentAlertBanner() {
+
+/*function renderCommentAlertBanner() {
   const now = new Date();
   now.setHours(0, 0, 0, 0);
 
@@ -822,7 +824,44 @@ function renderCommentAlertBanner() {
 
   bar.style.display = 'flex';
   bar.innerHTML = `
-    <div class="da-summary" onclick="filterOldCommentCases()">
+    <div class="da-summary" onclick="filterbyEmailLastSent()">
+      <span>📧</span>
+      <span>Last EMAIL</span>
+      <span class="da-count-badge">${staleCases.length}</span>
+    </div>
+  `;
+}*/
+
+function renderCommentAlertBanner() {
+  const staleCases = allData.filter(d => {
+    if (d.status === 'Closed') return false;
+    if (!d.emailLastSent) return false; // client never emailed, nothing to reply to
+
+    const clientDate = parseDate(d.emailLastSent);
+    if (!clientDate) return false; // can't trust unparsable client date
+
+    // Never replied at all -> stale
+    if (!d.lastEmailSent || String(d.lastEmailSent).trim() === '') return true;
+
+    const ourReplyDate = parseDate(d.lastEmailSent);
+    if (!ourReplyDate) return true; // reply date unparsable, treat as stale
+
+    // Stale if our reply is not after the client's email
+    return ourReplyDate <= clientDate;
+  });
+
+  const bar = document.getElementById('commentAlertBar');
+  if (!bar) return;
+
+  if (!staleCases.length) {
+    bar.style.display = 'none';
+    bar.innerHTML = '';
+    return;
+  }
+
+  bar.style.display = 'flex';
+  bar.innerHTML = `
+    <div class="da-summary" onclick="filterbyEmailLastSent()">
       <span>📧</span>
       <span>Last EMAIL</span>
       <span class="da-count-badge">${staleCases.length}</span>
@@ -830,6 +869,27 @@ function renderCommentAlertBanner() {
   `;
 }
 
+function filterbyEmailLastSent() {
+  const filtered = allData.filter(d => {
+    if (!d.emailLastSent) return false; // client never emailed
+
+    const clientDate = parseDate(d.emailLastSent);
+    if (!clientDate) return false; // can't trust unparsable client date
+
+    if (!d.lastEmailSent || String(d.lastEmailSent).trim() === '') return true; // never replied
+
+    const ourReplyDate = parseDate(d.lastEmailSent);
+    if (!ourReplyDate) return true; // reply date unparsable, treat as stale
+
+    // Stale if our reply is not after the client's email
+    return ourReplyDate <= clientDate;
+  });
+
+  currentData = filtered;
+  renderTable(filtered);
+  renderWatchlist();
+  document.getElementById('caseTable').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 function filterOldCommentCases() {
   const today = new Date(); today.setHours(0,0,0,0);
 
