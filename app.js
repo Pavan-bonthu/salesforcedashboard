@@ -1759,6 +1759,7 @@ function renderTable(data) {
         <td>${row.inc ? `<span class="inc-badge">${row.inc}</span>` : '<span style="color:var(--text-muted)">—</span>'}</td>
         <td>${!isNaN(incAge) ? `<span class="age-num ${incAgeClass}">${incAge}d</span>` : '—'}</td>
         <td>${row.incOwner || '—'}</td>
+        <td>${row.incOwnerQueue || '—'}</td>
         <td class="${deliveryClass}">${deliveryDisplay}</td>
         <td class="${nextUpdateClass}">
   ${row.nextUpdate ? (parseDDMMYYYY(row.nextUpdate)?.toLocaleDateString('en-IN') || '—') : '—'}
@@ -1766,6 +1767,17 @@ function renderTable(data) {
 <td>${(() => {
   if (!row.emailLastSent) return '<span style="color:var(--danger);font-family:var(--mono);font-size:10px;">NEVER</span>';
   const d =  parseDate(row.emailLastSent);
+  if (!d ||isNaN(d.getTime())) return '—';
+  const today = new Date(); today.setHours(0,0,0,0); d.setHours(0,0,0,0);
+  const diff = Math.floor((today - d) / 86400000);
+  const label = d.toLocaleDateString('en-IN');
+  if (diff > 3) return `<span style="color:var(--danger);font-family:var(--mono);font-size:10px;">${label} <em>(${diff}d ago)</em></span>`;
+  if (diff > 1) return `<span style="color:var(--warning);font-family:var(--mono);font-size:10px;">${label}</span>`;
+  return `<span style="color:var(--success);font-family:var(--mono);font-size:10px;">${label}</span>`;
+})()} </td>
+<td>${(() => {
+  if (!row.lastEmailSent) return '<span style="color:var(--danger);font-family:var(--mono);font-size:10px;">NEVER</span>';
+  const d =  parseDate(row.lastEmailSent);
   if (!d ||isNaN(d.getTime())) return '—';
   const today = new Date(); today.setHours(0,0,0,0); d.setHours(0,0,0,0);
   const diff = Math.floor((today - d) / 86400000);
