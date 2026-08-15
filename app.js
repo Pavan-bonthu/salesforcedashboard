@@ -322,6 +322,15 @@ function isValidCaseNumber(value) {
 function renderKPI() {
   const validCases = allData.filter(row => isValidCaseNumber(row["Case Number"]));
   const total   = validCases.length;
+  const ops = validCases.filter(d => d.pendingWith === 'Ops' || d.pendingWith === 'ops').length;
+  const dev = validCases.filter(d => d.pendingWith === 'Developers' || d.pendingWith === 'developers').length;
+  const client = validCases.filter(d => d.pendingWith === 'Client' || d.pendingWith === 'client').length;
+  const incque1 = validCases.filter(d=> d.incOwnerQueue === 'NEST DELIVERY AND PMO').length;
+  const incque2 = validCases.filter(d=> d.incOwnerQueue === 'NEST PRODUCT').length;
+  const incque3 = validCases.filter(d=> d.incOwnerQueue === 'NEST OMS ROTA').length;
+  const incque4 = validCases.filter(d=> d.incOwnerQueue === 'NEST NT ROTA').length;
+  const incque5 = validCases.filter(d=> d.incOwnerQueue === 'NEST DB AND UPLOADER ROTA').length;
+  const incque6 = validCases.filter(d=> d.incOwnerQueue === 'NEST_ADAPTER_LP_UPLOADER_ROTA').length;
   const pending = validCases.filter(d => d.Status !== 'Closed' && d.status !== 'Closed').length;
   const incYes  = validCases.filter(d => d.inc).length;
   const incNo   = total - incYes;
@@ -330,7 +339,20 @@ function renderKPI() {
     <div class="kpi-card k-total">
       <div class="kpi-label">TOTAL CASES</div>
       <div class="kpi-value">${total}</div>
-      <div class="kpi-sub">based on Case Number column</div>
+      <div class="kpi-breakdown">
+        <div> 
+          <span class ="kpi-small-label">OPS</span>
+          <div class="kpi-small-value">${ops}</div>
+        </div>
+        <div>
+          <span class ="kpi-small-label">DEV</span>
+          <div class="kpi-small-value">${dev}</div>
+        </div>
+        <div>
+          <span class ="kpi-small-label">Client</span>
+          <div class="kpi-small-value">${client}</div>
+        </div>
+      </div>
     </div>
     <div class="kpi-card k-pending">
       <div class="kpi-label">OPEN / PENDING</div>
@@ -340,6 +362,32 @@ function renderKPI() {
     <div class="kpi-card k-inc">
       <div class="kpi-label">INC CREATED</div>
       <div class="kpi-value">${incYes}</div>
+      <div class="kpi-breakdown">
+        <div> 
+          <span class ="kpi-small-label">Del</span>
+          <div class="kpi-small-value">${incque1}</div>
+        </div>
+        <div> 
+          <span class ="kpi-small-label">Prod</span>
+          <div class="kpi-small-value">${incque2}</div>
+        </div>
+        <div> 
+          <span class ="kpi-small-label">OMS</span>
+          <div class="kpi-small-value">${incque3}</div>
+        </div>
+        <div> 
+          <span class ="kpi-small-label">NT</span>
+          <div class="kpi-small-value">${incque4}</div>
+        </div>
+        <div> 
+          <span class ="kpi-small-label">DB</span>
+          <div class="kpi-small-value">${incque5}</div>
+        </div>
+        <div> 
+          <span class ="kpi-small-label">Adap</span>
+          <div class="kpi-small-value">${incque6}</div>
+        </div>
+      </div>
     </div>
     <div class="kpi-card k-noinc">
       <div class="kpi-label">NO INC</div>
@@ -463,16 +511,22 @@ function renderCharts(data= allData) {
     options: {
       responsive: true, maintainAspectRatio: false, cutout: '65%',
       plugins: { legend: { position: 'bottom', labels: { color: '#64748b', font: { family: 'Space Mono', size: 10 } } } },
+      
+      
       onClick: (e, elements) => {
         if (!elements.length) return;
         const clicked = sL[elements[0].index];
-        const filtered = allData.filter(d => String(d.Server || '').trim().toUpperCase() === clicked);
+        const filtered = quickFilter('envFilter', clicked);
+
         currentData = filtered;
         renderTable(filtered);
+
       }
-    }
-  });
-}
+
+      }
+     }
+  )}
+
 
 // ─── PROMISE HELPERS ───────────────────────────
 function getPromises(caseNum) { return store.getCase(caseNum, 'promises') || []; }
@@ -1342,6 +1396,7 @@ function renderFilters() {
   setupExcelFilter('bucketFilter',    'bucket');
   setupExcelFilter('INCFilter',       'incOwner');
   setupExcelFilter('INCFilterqueue',  'incOwnerQueue');
+  setupExcelFilter('envFilter',   'Server');
 }
 
 function setupExcelFilter(id, key) {
@@ -1349,7 +1404,7 @@ function setupExcelFilter(id, key) {
   if (!sel) return;
 
   sel.style.display = 'none'; // hide the original <select multiple>
-  FILTER_KEYS[id] = key;
+  kpi[id] = key;
   xfilterState[id] = new Set(); // reset selection whenever data reloads
 
   // remove old widget if this ran before (e.g. re-uploaded file)
