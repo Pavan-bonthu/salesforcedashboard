@@ -311,6 +311,11 @@ function processData(data) {
   renderCommentAlertBanner();
   renderNextUpdateAlertBanner();
   updateBellBadge();
+
+console.log("processData completed");
+
+console.log("allData count:", data.length);
+window.allData = data;
 }
 
 // ─── VALIDATE CASE NUMBER ──────────────────────
@@ -1404,7 +1409,7 @@ function setupExcelFilter(id, key) {
   if (!sel) return;
 
   sel.style.display = 'none'; // hide the original <select multiple>
-  kpi[id] = key;
+  FILTER_KEYS[id] = key;
   xfilterState[id] = new Set(); // reset selection whenever data reloads
 
   // remove old widget if this ran before (e.g. re-uploaded file)
