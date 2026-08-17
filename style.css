@@ -947,3 +947,14 @@ tr:last-child td { border-bottom: none; }
   margin-top:3px;
 }
 
+
+.logo-container {
+  display: flex;
+  align-items: center;
+}
+
+.logo {
+  height: 35px;       
+  width: auto;
+  object-fit: contain;
+}
