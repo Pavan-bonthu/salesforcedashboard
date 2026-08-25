@@ -322,7 +322,6 @@ select option { background: var(--surface2); }
 .kpi-card.k-inc .kpi-value { color: #ef4444; }
 .kpi-card.k-noinc .kpi-value { color: #22c55e; }
 .kpi-sub { font-size: 12px; color: #7b93b8; }
-.add-btn.kpi-add { position: absolute; top: 12px; right: 12px; font-size: 14px; padding: 4px 8px; }
 
 /* ALERT STRIP */
 .alert-strip { display: flex; flex-direction: column; gap: 6px; }
