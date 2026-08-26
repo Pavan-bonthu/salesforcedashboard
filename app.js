@@ -468,6 +468,7 @@ function renderCharts(data= allData) {
     data: { labels: pL, datasets: [{ data: pV, backgroundColor: pwbarColors, borderRadius: 4, borderSkipped: false }] },
     options: {
       responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+      interactions: { mode: 'nearest', axis: 'y', intersect: false },
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -491,10 +492,10 @@ function renderCharts(data= allData) {
         let filtered;
         if (clicked === 'Developers') {
           filtered = e.native.shiftKey
-            ? allData.filter(d => d.pendingWith === 'Developers' && d.status !== 'Closed' && d.deliveryDate && String(d.deliveryDate).trim() !== '')
-            : allData.filter(d => d.pendingWith === 'Developers' && d.status !== 'Closed');
+            ? data.filter(d => d.pendingWith === 'Developers' && d.status !== 'Closed' && d.deliveryDate && String(d.deliveryDate).trim() !== '')
+            : data.filter(d => d.pendingWith === 'Developers' && d.status !== 'Closed');
         } else {
-          filtered = allData.filter(d => d.pendingWith === clicked && d.status !== 'Closed');
+          filtered = data.filter(d => d.pendingWith === clicked && d.status !== 'Closed');
         }
         currentData = filtered;
         renderTable(filtered);
